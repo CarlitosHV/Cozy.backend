@@ -1,5 +1,5 @@
 export type CompanionType = 'nube' | 'estrella' | 'luciernaga' | 'catarina' | 'hada' | 'serpiente';
-export type InventoryItemType = 'baya' | 'nuez' | 'llave' | null;
+export type InventoryItemType = 'baya' | 'nuez' | 'llave' | 'resortera' | 'piedra' | 'bate' | 'red' | 'bomba' | 'luz' | 'antorcha' | null;
 export type AnimationType = 'idle' | 'walk' | 'run' | 'jump' | 'fall';
 export type GameMode = 'free' | 'time_trial' | 'chase';
 

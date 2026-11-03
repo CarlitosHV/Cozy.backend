@@ -92,6 +92,10 @@ export function setupSocketServer(httpServer: HttpServer): { io: Server; roomMan
       roomManager.handleWorldBlock(socket, data);
     });
 
+    socket.on('world:event', (data: { levelId?: number; kind?: string; i?: number; v?: number; target?: string }) => {
+      roomManager.handleWorldEvent(socket, data);
+    });
+
     socket.on('invite:send', async (data: { toUserId?: string; levelId?: number }) => {
       try {
         await inviteManager.handleSendInvite(socket, data);

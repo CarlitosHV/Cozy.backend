@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 const companionEnum = z.enum(['nube', 'estrella', 'luciernaga', 'catarina', 'hada', 'serpiente']);
-const inventorySlotItem = z.enum(['baya', 'nuez', 'llave']).nullable();
+const inventorySlotItem = z.enum(['baya', 'nuez', 'llave', 'resortera', 'piedra', 'bate', 'red', 'bomba', 'luz', 'antorcha']).nullable();
 
 export const appearanceSchema = z.object({
   bodyType: z.enum(['chico', 'chica']),

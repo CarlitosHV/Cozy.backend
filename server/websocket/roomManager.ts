@@ -14,7 +14,23 @@ interface SocketRoomBinding {
 interface WorldState {
   orbs: Set<number>;
   blocks: Map<number, { x: number; y: number; z: number }>;
+  /** Boss fights: events so far (damage, heals, nets…), replayed by whoever joins late */
+  events: WorldEvent[];
 }
+
+/** Something that happened in a boss fight, relayed to the rest of the party. */
+interface WorldEvent {
+  userId: string;
+  username: string;
+  levelId: number;
+  kind: string;
+  i?: number;
+  v?: number;
+  target?: string;
+}
+
+/** How many boss-fight events are kept per party and level. */
+const MAX_WORLD_EVENTS = 400;
 
 /** Highest orb / rock index accepted from clients (levels have at most 5 of each). */
 const MAX_WORLD_INDEX = 32;
@@ -50,7 +66,7 @@ export class RoomManager {
     const key = this.worldKey(roomKey, levelId);
     let ws = this.worldStates.get(key);
     if (!ws) {
-      ws = { orbs: new Set(), blocks: new Map() };
+      ws = { orbs: new Set(), blocks: new Map(), events: [] };
       this.worldStates.set(key, ws);
     }
     return ws;
@@ -128,6 +144,7 @@ export class RoomManager {
       levelId: safeLevelId,
       orbs: [...world.orbs],
       blocks: [...world.blocks.entries()].map(([index, p]) => ({ index, x: p.x, y: p.y, z: p.z })),
+      events: world.events,
     });
 
     socket.to(roomKey).emit('player:joined', {
@@ -256,6 +273,38 @@ export class RoomManager {
       y,
       z,
     });
+  }
+
+  /**
+   * Boss fights: damage, heals, nets, candelabra, rescues… The server only checks the shape
+   * of the event, keeps it for late joiners and relays it to the rest of the party.
+   */
+  handleWorldEvent(socket: Socket, data: { levelId?: number; kind?: string; i?: number; v?: number; target?: string }): void {
+    const user = socket.data.user;
+    const binding = this.socketRooms.get(socket.id);
+    if (!user || !binding) return;
+    if (Number(data?.levelId) !== binding.levelId) return;
+    const kind = data?.kind;
+    if (typeof kind !== 'string' || !/^[a-z]{1,16}$/.test(kind)) return;
+    const event: WorldEvent = { userId: user.userId, username: user.username, levelId: binding.levelId, kind };
+    if (data.i !== undefined) {
+      if (!this.validIndex(data.i)) return;
+      event.i = data.i;
+    }
+    if (data.v !== undefined) {
+      if (typeof data.v !== 'number' || !isFinite(data.v) || Math.abs(data.v) > 1000) return;
+      event.v = data.v;
+    }
+    if (data.target !== undefined) {
+      if (typeof data.target !== 'string' || data.target.length > 64) return;
+      event.target = data.target;
+    }
+
+    const world = this.getWorld(binding.roomKey, binding.levelId);
+    world.events.push(event);
+    if (world.events.length > MAX_WORLD_EVENTS) world.events.splice(0, world.events.length - MAX_WORLD_EVENTS);
+
+    socket.to(binding.roomKey).emit('world:event', event);
   }
 
   /** Forget the shared puzzle state once nobody is left in the party room. */
