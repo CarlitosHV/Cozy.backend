@@ -83,6 +83,15 @@ export function setupSocketServer(httpServer: HttpServer): { io: Server; roomMan
       roomManager.handleCompanionPower(socket, data);
     });
 
+    // Shared puzzle progress inside a party: orbs found and rocks pushed
+    socket.on('world:orb', (data: { levelId?: number; orbIndex?: number }) => {
+      roomManager.handleWorldOrb(socket, data);
+    });
+
+    socket.on('world:block', (data: { levelId?: number; blockIndex?: number; x?: number; y?: number; z?: number }) => {
+      roomManager.handleWorldBlock(socket, data);
+    });
+
     socket.on('invite:send', async (data: { toUserId?: string; levelId?: number }) => {
       try {
         await inviteManager.handleSendInvite(socket, data);
