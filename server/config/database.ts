@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import {
   CharacterAppearance,
+  FriendRequestDocument,
   InventoryStatus,
   LevelRecordDocument,
   PlayerProfileDocument,
@@ -48,6 +49,8 @@ class InMemoryDatabase {
   users: Map<string, UserDocument> = new Map();
   profiles: Map<string, PlayerProfileDocument> = new Map();
   records: LevelRecordDocument[] = [];
+  friendRequests: Map<string, FriendRequestDocument> = new Map();
+  friendships: Map<string, Set<string>> = new Map();
 
   constructor() {
     this.seedDefaultData();
@@ -166,6 +169,159 @@ class InMemoryDatabase {
 
   async getAllRecords(): Promise<LevelRecordDocument[]> {
     return [...this.records];
+  }
+
+  async searchUsersByUsername(query: string, excludeUserId?: string, limit = 20): Promise<UserDocument[]> {
+    const normalized = query.toLowerCase().trim();
+    if (!normalized) return [];
+
+    const results: UserDocument[] = [];
+    for (const user of this.users.values()) {
+      if (excludeUserId && user._id === excludeUserId) continue;
+      if (!user.isActive) continue;
+      if (
+        user.username.includes(normalized) ||
+        user.displayName.toLowerCase().includes(normalized)
+      ) {
+        results.push(user);
+        if (results.length >= limit) break;
+      }
+    }
+    return results;
+  }
+
+  private getFriendSet(userId: string): Set<string> {
+    if (!this.friendships.has(userId)) {
+      this.friendships.set(userId, new Set());
+    }
+    return this.friendships.get(userId)!;
+  }
+
+  async areFriends(userIdA: string, userIdB: string): Promise<boolean> {
+    return this.getFriendSet(userIdA).has(userIdB);
+  }
+
+  async listFriendIds(userId: string): Promise<string[]> {
+    return Array.from(this.getFriendSet(userId));
+  }
+
+  async listFriends(userId: string): Promise<UserDocument[]> {
+    const ids = await this.listFriendIds(userId);
+    const friends: UserDocument[] = [];
+    for (const id of ids) {
+      const user = this.users.get(id);
+      if (user) friends.push(user);
+    }
+    return friends;
+  }
+
+  async findPendingRequestBetween(fromUserId: string, toUserId: string): Promise<FriendRequestDocument | null> {
+    for (const request of this.friendRequests.values()) {
+      if (
+        request.status === 'pending' &&
+        request.fromUserId === fromUserId &&
+        request.toUserId === toUserId
+      ) {
+        return request;
+      }
+    }
+    return null;
+  }
+
+  async findFriendRequestById(requestId: string): Promise<FriendRequestDocument | null> {
+    return this.friendRequests.get(requestId) || null;
+  }
+
+  async listPendingRequestsFor(userId: string): Promise<FriendRequestDocument[]> {
+    return Array.from(this.friendRequests.values()).filter(
+      (r) => r.status === 'pending' && r.toUserId === userId
+    );
+  }
+
+  async listOutgoingPendingRequests(userId: string): Promise<FriendRequestDocument[]> {
+    return Array.from(this.friendRequests.values()).filter(
+      (r) => r.status === 'pending' && r.fromUserId === userId
+    );
+  }
+
+  async sendFriendRequest(fromUserId: string, toUserId: string): Promise<FriendRequestDocument> {
+    const now = new Date().toISOString();
+    const request: FriendRequestDocument = {
+      _id: this.generateId('frq'),
+      fromUserId,
+      toUserId,
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.friendRequests.set(request._id, request);
+    return request;
+  }
+
+  async acceptFriendRequest(requestId: string, acceptingUserId: string): Promise<FriendRequestDocument> {
+    const request = this.friendRequests.get(requestId);
+    if (!request) {
+      const err: any = new Error('Friend request not found');
+      err.status = 404;
+      err.code = 'FRIEND_REQUEST_NOT_FOUND';
+      throw err;
+    }
+    if (request.toUserId !== acceptingUserId) {
+      const err: any = new Error('Only the recipient can accept this friend request');
+      err.status = 403;
+      err.code = 'FORBIDDEN';
+      throw err;
+    }
+    if (request.status !== 'pending') {
+      const err: any = new Error('Friend request is no longer pending');
+      err.status = 409;
+      err.code = 'FRIEND_REQUEST_NOT_PENDING';
+      throw err;
+    }
+
+    request.status = 'accepted';
+    request.updatedAt = new Date().toISOString();
+    this.friendRequests.set(requestId, request);
+
+    this.getFriendSet(request.fromUserId).add(request.toUserId);
+    this.getFriendSet(request.toUserId).add(request.fromUserId);
+
+    return request;
+  }
+
+  async declineFriendRequest(requestId: string, decliningUserId: string): Promise<FriendRequestDocument> {
+    const request = this.friendRequests.get(requestId);
+    if (!request) {
+      const err: any = new Error('Friend request not found');
+      err.status = 404;
+      err.code = 'FRIEND_REQUEST_NOT_FOUND';
+      throw err;
+    }
+    if (request.toUserId !== decliningUserId) {
+      const err: any = new Error('Only the recipient can decline this friend request');
+      err.status = 403;
+      err.code = 'FORBIDDEN';
+      throw err;
+    }
+    if (request.status !== 'pending') {
+      const err: any = new Error('Friend request is no longer pending');
+      err.status = 409;
+      err.code = 'FRIEND_REQUEST_NOT_PENDING';
+      throw err;
+    }
+
+    request.status = 'declined';
+    request.updatedAt = new Date().toISOString();
+    this.friendRequests.set(requestId, request);
+    return request;
+  }
+
+  async removeFriend(userId: string, friendUserId: string): Promise<boolean> {
+    const a = this.getFriendSet(userId);
+    const b = this.getFriendSet(friendUserId);
+    const removed = a.delete(friendUserId);
+    b.delete(userId);
+    return removed;
   }
 
   // Seed default demonstration players

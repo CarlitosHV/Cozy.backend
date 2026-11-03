@@ -3,12 +3,14 @@ import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { CONFIG } from '../config/env.js';
 import { RoomManager } from './roomManager.js';
+import { InviteManager } from './inviteManager.js';
+import { markUserOffline, markUserOnline } from './presence.js';
 import { JwtPayload } from '../models/types.js';
 
 export function setupSocketServer(httpServer: HttpServer): { io: Server; roomManager: RoomManager } {
   const io = new Server(httpServer, {
     cors: {
-      origin: '*',
+      origin: CONFIG.CORS_ORIGIN,
       methods: ['GET', 'POST', 'PUT', 'DELETE'],
       credentials: true,
     },
@@ -18,8 +20,8 @@ export function setupSocketServer(httpServer: HttpServer): { io: Server; roomMan
   });
 
   const roomManager = new RoomManager(io);
+  const inviteManager = new InviteManager(io);
 
-  // Authentication Handshake Middleware (Section 7.1)
   io.use((socket: Socket, next) => {
     const token =
       socket.handshake.auth?.token ||
@@ -44,28 +46,70 @@ export function setupSocketServer(httpServer: HttpServer): { io: Server; roomMan
   });
 
   io.on('connection', (socket: Socket) => {
-    // Client joins a level room
-    socket.on('room:join', async (data: { levelId: number }) => {
+    const user = socket.data.user;
+    if (user?.userId) {
+      markUserOnline(user.userId, socket.id);
+    }
+
+    socket.on('room:join', async (data: { levelId?: number; roomId?: string }) => {
       try {
         const levelId = Number(data?.levelId) || 1;
-        await roomManager.handleJoinRoom(socket, levelId);
+        const roomId = data?.roomId ? String(data.roomId) : undefined;
+        await roomManager.handleJoinRoom(socket, levelId, roomId);
       } catch (err: any) {
-        socket.emit('error', { message: err.message || 'Failed to join level room' });
+        socket.emit('error', {
+          code: err.code || 'JOIN_FAILED',
+          message: err.message || 'Failed to join level room',
+        });
       }
     });
 
-    // Movement replication loop (Tick rate 20-30 Hz)
+    socket.on('room:leave', async () => {
+      try {
+        await roomManager.handleLeaveRoom(socket, 'leave');
+      } catch (err: any) {
+        socket.emit('error', {
+          code: err.code || 'LEAVE_FAILED',
+          message: err.message || 'Failed to leave room',
+        });
+      }
+    });
+
     socket.on('player:sync', (data: any) => {
       roomManager.handlePlayerSync(socket, data);
     });
 
-    // Companion power trigger
     socket.on('companion:power', (data: { powerType: string }) => {
       roomManager.handleCompanionPower(socket, data);
     });
 
-    socket.on('disconnect', () => {
-      roomManager.handleDisconnect(socket);
+    socket.on('invite:send', async (data: { toUserId?: string; levelId?: number }) => {
+      try {
+        await inviteManager.handleSendInvite(socket, data);
+      } catch (err: any) {
+        socket.emit('error', {
+          code: err.code || 'INVITE_SEND_FAILED',
+          message: err.message || 'Failed to send invite',
+        });
+      }
+    });
+
+    socket.on('invite:respond', async (data: { inviteId?: string; accept?: boolean }) => {
+      try {
+        await inviteManager.handleRespondInvite(socket, data);
+      } catch (err: any) {
+        socket.emit('error', {
+          code: err.code || 'INVITE_RESPOND_FAILED',
+          message: err.message || 'Failed to respond to invite',
+        });
+      }
+    });
+
+    socket.on('disconnect', async () => {
+      if (user?.userId) {
+        markUserOffline(user.userId, socket.id);
+      }
+      await roomManager.handleDisconnect(socket);
     });
   });
 

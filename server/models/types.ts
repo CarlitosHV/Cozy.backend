@@ -88,6 +88,24 @@ export interface PlayerRemoteState {
   levelId: number;
 }
 
+export interface FriendRequestDocument {
+  _id: string;
+  fromUserId: string;
+  toUserId: string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GameInvitePayload {
+  inviteId: string;
+  fromUserId: string;
+  toUserId: string;
+  levelId: number;
+  roomId?: string;
+  createdAt: number;
+}
+
 export interface JwtPayload {
   sub: string;
   username: string;

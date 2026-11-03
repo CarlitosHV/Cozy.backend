@@ -3,34 +3,58 @@ import { db, DEFAULT_APPEARANCE } from '../config/database.js';
 import { redis } from '../config/redis.js';
 import { AnimationType, PlayerRemoteState } from '../models/types.js';
 
+const PARTY_MAX_PLAYERS = 4;
+
+interface SocketRoomBinding {
+  levelId: number;
+  roomKey: string;
+}
+
 export class RoomManager {
   private io: Server;
-  // socketId -> levelId
-  private socketRooms = new Map<string, number>();
+  private socketRooms = new Map<string, SocketRoomBinding>();
 
   constructor(io: Server) {
     this.io = io;
   }
 
-  getRoomName(levelId: number): string {
-    return `level_${levelId}`;
+  resolveRoomKey(roomId?: string): string {
+    if (!roomId || !roomId.startsWith('party_')) {
+      const err: any = new Error('A private party roomId is required. Public lobbies are disabled.');
+      err.code = 'PRIVATE_ROOM_REQUIRED';
+      throw err;
+    }
+    return roomId;
   }
 
-  async handleJoinRoom(socket: Socket, levelId: number): Promise<void> {
+  redisKeyForRoom(roomKey: string): string {
+    return `room:${roomKey}:players`;
+  }
+
+  async handleJoinRoom(socket: Socket, levelId: number, roomId?: string): Promise<void> {
     const user = socket.data.user;
     if (!user) return;
 
-    const currentLevel = this.socketRooms.get(socket.id);
-    if (currentLevel !== undefined && currentLevel !== levelId) {
-      await this.handleLeaveRoom(socket, currentLevel);
+    const safeLevelId = Number(levelId) || 1;
+    const roomKey = this.resolveRoomKey(roomId);
+    const redisRoomKey = this.redisKeyForRoom(roomKey);
+
+    const currentPlayers = Object.keys(redis.hgetall(redisRoomKey)).length;
+    const alreadyInRoom = Boolean(redis.hget(redisRoomKey, socket.id));
+    if (!alreadyInRoom && currentPlayers >= PARTY_MAX_PLAYERS) {
+      const err: any = new Error('Private party room is full');
+      err.code = 'PARTY_FULL';
+      throw err;
     }
 
-    // Join new socket.io room
-    const roomName = this.getRoomName(levelId);
-    socket.join(roomName);
-    this.socketRooms.set(socket.id, levelId);
+    const current = this.socketRooms.get(socket.id);
+    if (current && (current.roomKey !== roomKey || current.levelId !== safeLevelId)) {
+      await this.handleLeaveRoom(socket, 'leave');
+    }
 
-    // Fetch player profile from DB
+    socket.join(roomKey);
+    this.socketRooms.set(socket.id, { levelId: safeLevelId, roomKey });
+
     const profile = await db.findProfileByUserId(user.userId);
     const appearance = profile?.appearance || DEFAULT_APPEARANCE;
 
@@ -54,29 +78,33 @@ export class RoomManager {
       anim: 'idle',
       lastUpdate: Date.now(),
       socketId: socket.id,
-      levelId,
+      levelId: safeLevelId,
     };
 
-    // Store in Redis hash: room:level_{levelId}:players
-    const redisRoomKey = `room:level_${levelId}:players`;
     redis.hset(redisRoomKey, socket.id, playerState);
 
-    // Get all existing players in this level
     const allPlayersInRoom = redis.hgetall<PlayerRemoteState>(redisRoomKey);
     const playersList = Object.values(allPlayersInRoom);
 
-    // 1. Send initial state of the room to the joining player
     socket.emit('room:state', {
-      levelId,
+      levelId: safeLevelId,
+      roomId: roomKey,
       players: playersList,
       yourSpawn: initialPos,
     });
 
-    // 2. Broadcast to all other players in the room that a player joined
-    socket.to(roomName).emit('player:joined', {
+    socket.to(roomKey).emit('player:joined', {
       userId: user.userId,
       username: user.username,
+      displayName: playerState.displayName,
       appearance,
+      x: playerState.x,
+      y: playerState.y,
+      z: playerState.z,
+      yaw: playerState.yaw,
+      anim: playerState.anim,
+      lastUpdate: playerState.lastUpdate,
+      levelId: safeLevelId,
       position: { x: playerState.x, y: playerState.y, z: playerState.z, yaw: playerState.yaw },
     });
   }
@@ -95,10 +123,9 @@ export class RoomManager {
     const user = socket.data.user;
     if (!user) return;
 
-    const levelId = this.socketRooms.get(socket.id);
-    if (!levelId) return;
+    const binding = this.socketRooms.get(socket.id);
+    if (!binding) return;
 
-    // Validate coordinates to prevent NaN/Infinity poisoning
     if (
       typeof data.x !== 'number' ||
       typeof data.y !== 'number' ||
@@ -110,7 +137,7 @@ export class RoomManager {
       return;
     }
 
-    const redisRoomKey = `room:level_${levelId}:players`;
+    const redisRoomKey = this.redisKeyForRoom(binding.roomKey);
     const existing = redis.hget<PlayerRemoteState>(redisRoomKey, socket.id);
     if (existing) {
       existing.x = data.x;
@@ -123,9 +150,7 @@ export class RoomManager {
       redis.hset(redisRoomKey, socket.id, existing);
     }
 
-    const roomName = this.getRoomName(levelId);
-    // Broadcast player:moved to all other clients in the level
-    socket.to(roomName).emit('player:moved', {
+    socket.to(binding.roomKey).emit('player:moved', {
       userId: user.userId,
       x: data.x,
       y: data.y,
@@ -140,14 +165,13 @@ export class RoomManager {
     const user = socket.data.user;
     if (!user) return;
 
-    const levelId = this.socketRooms.get(socket.id);
-    if (!levelId) return;
+    const binding = this.socketRooms.get(socket.id);
+    if (!binding) return;
 
-    const redisRoomKey = `room:level_${levelId}:players`;
+    const redisRoomKey = this.redisKeyForRoom(binding.roomKey);
     const player = redis.hget<PlayerRemoteState>(redisRoomKey, socket.id);
 
-    const roomName = this.getRoomName(levelId);
-    this.io.to(roomName).emit('companion:power:broadcast', {
+    this.io.to(binding.roomKey).emit('companion:power:broadcast', {
       userId: user.userId,
       username: user.username,
       powerType: data.powerType,
@@ -156,26 +180,32 @@ export class RoomManager {
     });
   }
 
-  async handleLeaveRoom(socket: Socket, levelId: number): Promise<void> {
+  async handleLeaveRoom(socket: Socket, reason: 'leave' | 'disconnect' = 'leave'): Promise<void> {
     const user = socket.data.user;
-    const roomName = this.getRoomName(levelId);
-    socket.leave(roomName);
-    this.socketRooms.delete(socket.id);
+    const binding = this.socketRooms.get(socket.id);
+    if (!binding) return;
 
-    const redisRoomKey = `room:level_${levelId}:players`;
+    const redisRoomKey = this.redisKeyForRoom(binding.roomKey);
+    const cached = redis.hget<PlayerRemoteState>(redisRoomKey, socket.id);
+
+    const leftPayload = {
+      userId: user?.userId || cached?.userId,
+      username: user?.username || cached?.username || 'jugador',
+      displayName: user?.displayName || cached?.displayName || cached?.username || user?.username || 'jugador',
+      reason,
+    };
+
+    this.socketRooms.delete(socket.id);
     redis.hdel(redisRoomKey, socket.id);
 
-    if (user) {
-      socket.to(roomName).emit('player:left', {
-        userId: user.userId,
-      });
+    if (leftPayload.userId) {
+      this.io.to(binding.roomKey).emit('player:left', leftPayload);
     }
+
+    socket.leave(binding.roomKey);
   }
 
   async handleDisconnect(socket: Socket): Promise<void> {
-    const levelId = this.socketRooms.get(socket.id);
-    if (levelId !== undefined) {
-      await this.handleLeaveRoom(socket, levelId);
-    }
+    await this.handleLeaveRoom(socket, 'disconnect');
   }
 }

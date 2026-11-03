@@ -1,0 +1,14 @@
+services:
+  api:
+    build:
+      context: .
+      target: production
+    container_name: cozy_leap_api
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      JWT_SECRET: ${JWT_SECRET:-cozy-leap-change-me-in-production}
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://cozy.hardbug.mx}
+    restart: unless-stopped

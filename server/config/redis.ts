@@ -65,6 +65,12 @@ class RedisStore {
     return this.sets.get(key)?.size || 0;
   }
 
+  sismember(key: string, member: string): boolean {
+    const set = this.sets.get(key);
+    if (!set) return false;
+    return set.has(member);
+  }
+
   // --- Hashes (e.g., room:level_{levelId}:players) ---
   hset(key: string, field: string, value: any): void {
     if (!this.hashes.has(key)) {
