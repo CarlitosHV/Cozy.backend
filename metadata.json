@@ -1,0 +1,6 @@
+{
+  "name": "Cozy Leap Online - Game Backend & Control Hub",
+  "description": "Production-ready Node.js & TypeScript game backend for Cozy Leap Online featuring JWT authentication, level authority & anti-cheat records, inventory & character appearance sync, and Socket.io multiplayer rooms with real-time replication.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
