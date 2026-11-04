@@ -15,20 +15,17 @@ services:
     environment:
       - PORT=3000
       - NODE_ENV=production
-    volumes:
-      # Opcional: volumen para respaldos locales
-      - api_data:/app/.data
-
-    # NOTA: Si tus contenedores de MongoDB y Redis están en una red de Docker existente,
-    # descomenta las siguientes 2 líneas y pon el nombre de tu red:
-    # networks:
-    #   - mi_red_existente
+    extra_hosts:
+      # Permite conectar a puertos del host con host.docker.internal si las bases exponen puertos
+      - "host.docker.internal:host-gateway"
+    networks:
+      - dokploy-network
 
 volumes:
   api_data:
     driver: local
 
-# Si usas una red de Docker ya existente con tus otros contenedores:
-# networks:
-#   mi_red_existente:
-#     external: true
+# Red interna que utiliza Dokploy para comunicar sus contenedores
+networks:
+  dokploy-network:
+    external: true
