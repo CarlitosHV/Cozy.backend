@@ -2,8 +2,10 @@ import http from 'http';
 import { createExpressApp } from './server/app.js';
 import { setupSocketServer } from './server/websocket/socketServer.js';
 import { CONFIG } from './server/config/env.js';
+import { db } from './server/config/database.js';
 
 async function startServer() {
+  await db.connectMongo();
   const app = createExpressApp();
   const httpServer = http.createServer(app);
 

@@ -1,4 +1,8 @@
+import fs from 'fs';
+import path from 'path';
 import bcrypt from 'bcryptjs';
+import { MongoClient, Db } from 'mongodb';
+import { CONFIG } from './env.js';
 import {
   CharacterAppearance,
   FriendRequestDocument,
@@ -51,9 +55,74 @@ class InMemoryDatabase {
   records: LevelRecordDocument[] = [];
   friendRequests: Map<string, FriendRequestDocument> = new Map();
   friendships: Map<string, Set<string>> = new Map();
+  private dbFilePath = path.resolve(process.cwd(), '.data', 'cozyleap_db.json');
+  private mongoClient: MongoClient | null = null;
+  public mongoDb: Db | null = null;
 
   constructor() {
+    this.initDatabase();
+  }
+
+  async connectMongo(): Promise<boolean> {
+    if (!CONFIG.MONGODB_URI) return false;
+    try {
+      this.mongoClient = new MongoClient(CONFIG.MONGODB_URI, {
+        serverSelectionTimeoutMS: 2500,
+        connectTimeoutMS: 2500,
+      });
+      await this.mongoClient.connect();
+      this.mongoDb = this.mongoClient.db();
+      console.log(`[Database] Connected to external MongoDB successfully at ${CONFIG.MONGODB_URI}`);
+      return true;
+    } catch (err: any) {
+      console.warn(`[Database] Could not connect to external MongoDB (${err.message}). Using persistent local storage.`);
+      this.mongoDb = null;
+      return false;
+    }
+  }
+
+  private initDatabase() {
+    try {
+      if (fs.existsSync(this.dbFilePath)) {
+        const raw = fs.readFileSync(this.dbFilePath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (parsed.users && Array.isArray(parsed.users)) {
+          this.users = new Map(parsed.users);
+          this.profiles = new Map(parsed.profiles || []);
+          this.records = parsed.records || [];
+          this.friendRequests = new Map(parsed.friendRequests || []);
+          this.friendships = new Map(
+            (parsed.friendships || []).map(([k, list]: [string, string[]]) => [k, new Set(list)])
+          );
+          console.log(`[Database] Loaded ${this.users.size} users, ${this.records.length} records from ${this.dbFilePath}`);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('[Database] Could not read from persistent store, seeding initial data:', e);
+    }
+
     this.seedDefaultData();
+    this.persist();
+  }
+
+  private persist() {
+    try {
+      const dir = path.dirname(this.dbFilePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const serialized = {
+        users: Array.from(this.users.entries()),
+        profiles: Array.from(this.profiles.entries()),
+        records: this.records,
+        friendRequests: Array.from(this.friendRequests.entries()),
+        friendships: Array.from(this.friendships.entries()).map(([k, set]) => [k, Array.from(set)]),
+      };
+      fs.writeFileSync(this.dbFilePath, JSON.stringify(serialized, null, 2), 'utf-8');
+    } catch (err) {
+      console.error('[Database] Error saving to persistent storage:', err);
+    }
   }
 
   generateId(prefix = 'id'): string {
@@ -120,6 +189,7 @@ class InMemoryDatabase {
       updatedAt: now,
     };
     this.profiles.set(id, profile);
+    this.persist();
 
     return user;
   }
@@ -129,6 +199,7 @@ class InMemoryDatabase {
     if (!user) return null;
     const updated = { ...user, ...updates, updatedAt: new Date().toISOString() };
     this.users.set(id, updated);
+    this.persist();
     return updated;
   }
 
@@ -146,6 +217,7 @@ class InMemoryDatabase {
       updatedAt: new Date().toISOString(),
     };
     this.profiles.set(userId, updated);
+    this.persist();
     return updated;
   }
 
@@ -157,6 +229,7 @@ class InMemoryDatabase {
       createdAt: new Date().toISOString(),
     };
     this.records.push(fullRecord);
+    this.persist();
     return fullRecord;
   }
 
@@ -255,6 +328,7 @@ class InMemoryDatabase {
       updatedAt: now,
     };
     this.friendRequests.set(request._id, request);
+    this.persist();
     return request;
   }
 
@@ -285,6 +359,7 @@ class InMemoryDatabase {
 
     this.getFriendSet(request.fromUserId).add(request.toUserId);
     this.getFriendSet(request.toUserId).add(request.fromUserId);
+    this.persist();
 
     return request;
   }
@@ -313,6 +388,7 @@ class InMemoryDatabase {
     request.status = 'declined';
     request.updatedAt = new Date().toISOString();
     this.friendRequests.set(requestId, request);
+    this.persist();
     return request;
   }
 
@@ -321,6 +397,7 @@ class InMemoryDatabase {
     const b = this.getFriendSet(friendUserId);
     const removed = a.delete(friendUserId);
     b.delete(userId);
+    this.persist();
     return removed;
   }
 

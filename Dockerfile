@@ -1,19 +1,37 @@
-FROM node:22-slim AS base
+# Dockerfile para Cozy Leap Online Backend
+FROM node:22-alpine AS builder
+
 WORKDIR /app
-COPY package.json package-lock.json ./
 
-FROM base AS development
+# Copiar archivos de dependencias
+COPY package*.json tsconfig.json vite.config.ts ./
 RUN npm ci
-COPY . .
-ENV NODE_ENV=development
-EXPOSE 3000
-CMD ["npm", "run", "dev"]
 
-FROM base AS production
-RUN npm ci
+# Copiar código fuente
 COPY . .
+
+# Construir bundle frontend y tipos
+RUN npm run build
+
+# Etapa final de producción
+FROM node:22-alpine AS runner
+
+WORKDIR /app
+
 ENV NODE_ENV=production
+ENV PORT=3000
+
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/server ./server
+COPY --from=builder /app/server.ts ./server.ts
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+
+# Instalar tsx para ejecutar server.ts
+RUN npm install -g tsx
+
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/v1/system/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["npm", "start"]
+
+CMD ["tsx", "server.ts"]

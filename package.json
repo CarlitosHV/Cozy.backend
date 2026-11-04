@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+    "build": "tsc --noEmit",
     "start": "tsx server.ts",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
@@ -15,7 +16,9 @@
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
+    "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.3",
+    "mongodb": "^7.8.0",
     "socket.io": "^4.8.4",
     "zod": "^4.6.7"
   },

@@ -1,14 +1,34 @@
+version: '3.8'
+
 services:
+  # Contenedor de la API (Node.js + Express + Socket.io)
   api:
     build:
       context: .
-      target: production
-    container_name: cozy_leap_api
+      dockerfile: Dockerfile
+    container_name: cozyleap_api
+    restart: always
     ports:
       - "${PORT:-3000}:3000"
+    env_file:
+      - .env
     environment:
-      NODE_ENV: production
-      PORT: 3000
-      JWT_SECRET: ${JWT_SECRET:-cozy-leap-change-me-in-production}
-      CORS_ORIGIN: ${CORS_ORIGIN:-https://cozy.hardbug.mx}
-    restart: unless-stopped
+      - PORT=3000
+      - NODE_ENV=production
+    volumes:
+      # Opcional: volumen para respaldos locales
+      - api_data:/app/.data
+
+    # NOTA: Si tus contenedores de MongoDB y Redis están en una red de Docker existente,
+    # descomenta las siguientes 2 líneas y pon el nombre de tu red:
+    # networks:
+    #   - mi_red_existente
+
+volumes:
+  api_data:
+    driver: local
+
+# Si usas una red de Docker ya existente con tus otros contenedores:
+# networks:
+#   mi_red_existente:
+#     external: true

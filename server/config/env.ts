@@ -16,6 +16,8 @@ export const CONFIG = {
   JWT_ACCESS_EXPIRES_IN: '15m',
   JWT_REFRESH_EXPIRES_DAYS: 7,
   CORS_ORIGIN: parseCorsOrigin(process.env.CORS_ORIGIN),
+  MONGODB_URI: process.env.MONGODB_URI || '',
+  REDIS_URL: process.env.REDIS_URL || '',
   MIN_LEVEL_PHYSICAL_SECONDS: {
     1: 4.5, // Isla Verde minimum feasible run time
     2: 7.0, // Cumbres Nubladas minimum feasible run time

@@ -1,3 +1,6 @@
+import Redis from 'ioredis';
+import { CONFIG } from './env.js';
+
 interface KeyValueItem {
   value: any;
   expiresAt?: number;
@@ -13,11 +16,42 @@ class RedisStore {
   private sets = new Map<string, Set<string>>();
   private hashes = new Map<string, Map<string, any>>();
   private sortedSets = new Map<string, SortedSetMember[]>();
+  public client: Redis | null = null;
+
+  constructor() {
+    if (CONFIG.REDIS_URL) {
+      try {
+        this.client = new Redis(CONFIG.REDIS_URL, {
+          maxRetriesPerRequest: 1,
+          lazyConnect: true,
+          retryStrategy(times) {
+            if (times > 3) return null;
+            return Math.min(times * 1000, 3000);
+          },
+        });
+        this.client.connect().then(() => {
+          console.log(`[Redis] Connected to external Redis at ${CONFIG.REDIS_URL}`);
+        }).catch((err) => {
+          console.warn(`[Redis] Could not connect to external Redis (${err.message}). Using local fast cache.`);
+        });
+      } catch (err: any) {
+        console.warn(`[Redis] Initialization warning: ${err.message}`);
+      }
+    }
+  }
 
   // --- String / Object Key-Value with TTL ---
   set(key: string, value: any, ttlSeconds?: number): void {
     const expiresAt = ttlSeconds ? Date.now() + ttlSeconds * 1000 : undefined;
     this.kv.set(key, { value, expiresAt });
+    if (this.client && this.client.status === 'ready') {
+      const valStr = typeof value === 'string' ? value : JSON.stringify(value);
+      if (ttlSeconds) {
+        this.client.setex(key, ttlSeconds, valStr).catch(() => {});
+      } else {
+        this.client.set(key, valStr).catch(() => {});
+      }
+    }
   }
 
   get<T = any>(key: string): T | null {
