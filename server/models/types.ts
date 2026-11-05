@@ -1,7 +1,16 @@
 export type CompanionType = 'nube' | 'estrella' | 'luciernaga' | 'catarina' | 'hada' | 'serpiente';
 export type InventoryItemType = 'baya' | 'nuez' | 'llave' | 'resortera' | 'piedra' | 'bate' | 'red' | 'bomba' | 'luz' | 'antorcha' | null;
 export type AnimationType = 'idle' | 'walk' | 'run' | 'jump' | 'fall';
-export type GameMode = 'free' | 'time_trial' | 'chase';
+export type GameMode = 'normal' | 'contrareloj' | 'persecucion' | 'free' | 'time_trial' | 'chase';
+export type CanonicalGameMode = 'normal' | 'contrareloj' | 'persecucion';
+
+export function normalizeGameMode(raw?: string): CanonicalGameMode {
+  if (!raw) return 'normal';
+  const m = raw.toLowerCase().trim();
+  if (m === 'contrareloj' || m === 'time_trial' || m === 'timetrial') return 'contrareloj';
+  if (m === 'persecucion' || m === 'chase') return 'persecucion';
+  return 'normal';
+}
 
 export interface CharacterAppearance {
   bodyType: 'chico' | 'chica';

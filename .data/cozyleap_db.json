@@ -1,0 +1,229 @@
+{
+  "users": [
+    [
+      "usr_mw3v4trd_ge9z21",
+      {
+        "_id": "usr_mw3v4trd_ge9z21",
+        "username": "pionero_cozy",
+        "displayName": "Pionero Cozy",
+        "email": "pionero@cozyleap.com",
+        "passwordHash": "$2b$10$IdvK4PtZdZh1VPJMs7.hbO5gzp14Spgx4f4gZATitsauPZqgUsNri",
+        "role": "admin",
+        "isActive": true,
+        "lastLoginAt": "2026-11-05T18:12:30.336Z",
+        "createdAt": "2026-11-05T18:12:16.681Z",
+        "updatedAt": "2026-11-05T18:12:30.336Z"
+      }
+    ],
+    [
+      "usr_mw3v4trd_lcekdr",
+      {
+        "_id": "usr_mw3v4trd_lcekdr",
+        "username": "saltarin99",
+        "displayName": "Saltarín 99",
+        "email": "saltarin@cozyleap.com",
+        "passwordHash": "$2b$10$IdvK4PtZdZh1VPJMs7.hbO5gzp14Spgx4f4gZATitsauPZqgUsNri",
+        "role": "player",
+        "isActive": true,
+        "lastLoginAt": "2026-11-05T18:12:16.681Z",
+        "createdAt": "2026-11-05T18:12:16.681Z",
+        "updatedAt": "2026-11-05T18:12:16.681Z"
+      }
+    ],
+    [
+      "usr_mw3v4trd_nyqeal",
+      {
+        "_id": "usr_mw3v4trd_nyqeal",
+        "username": "luna_gamer",
+        "displayName": "Luna Gamer",
+        "email": "luna@cozyleap.com",
+        "passwordHash": "$2b$10$IdvK4PtZdZh1VPJMs7.hbO5gzp14Spgx4f4gZATitsauPZqgUsNri",
+        "role": "player",
+        "isActive": true,
+        "lastLoginAt": "2026-11-05T18:12:16.681Z",
+        "createdAt": "2026-11-05T18:12:16.681Z",
+        "updatedAt": "2026-11-05T18:12:16.681Z"
+      }
+    ]
+  ],
+  "profiles": [
+    [
+      "usr_mw3v4trd_ge9z21",
+      {
+        "_id": "prf_mw3v4trd_1e9uic",
+        "userId": "usr_mw3v4trd_ge9z21",
+        "appearance": {
+          "bodyType": "chico",
+          "skinColor": "#f8d5b8",
+          "hairStyle": "cozy_messy",
+          "hairColor": "#4a2e18",
+          "eyesStyle": "bright_round",
+          "eyesColor": "#2b5c8f",
+          "shirtStyle": "hoodie",
+          "shirtColor": "#059669",
+          "pantsStyle": "joggers",
+          "pantsColor": "#1e293b",
+          "shoesColor": "#f97316",
+          "hat": "gorro_explorador",
+          "glasses": "none",
+          "backpack": "explorer_pack",
+          "companion": "estrella"
+        },
+        "inventory": {
+          "slots": [
+            "baya",
+            "nuez",
+            "llave",
+            "baya",
+            null
+          ]
+        },
+        "progress": {
+          "maxUnlockedLevel": 4,
+          "completedLevels": [
+            1,
+            2,
+            3
+          ],
+          "totalCollectiblesFound": 44,
+          "unlockedCompanions": [
+            "nube",
+            "estrella",
+            "luciernaga"
+          ]
+        },
+        "stats": {
+          "totalPlayTimeSeconds": 4233,
+          "totalJumps": 145,
+          "totalFalls": 12
+        },
+        "updatedAt": "2026-11-05T18:12:30.358Z"
+      }
+    ],
+    [
+      "usr_mw3v4trd_lcekdr",
+      {
+        "_id": "prf_mw3v4trd_72vypm",
+        "userId": "usr_mw3v4trd_lcekdr",
+        "appearance": {
+          "bodyType": "chica",
+          "skinColor": "#f8d5b8",
+          "hairStyle": "ponytail",
+          "hairColor": "#d97706",
+          "eyesStyle": "bright_round",
+          "eyesColor": "#2b5c8f",
+          "shirtStyle": "hoodie",
+          "shirtColor": "#db2777",
+          "pantsStyle": "joggers",
+          "pantsColor": "#1e293b",
+          "shoesColor": "#f97316",
+          "hat": "beanie_cozy",
+          "glasses": "none",
+          "backpack": "explorer_pack",
+          "companion": "luciernaga"
+        },
+        "inventory": {
+          "slots": [
+            "baya",
+            "nuez",
+            "llave",
+            "baya",
+            null
+          ]
+        },
+        "progress": {
+          "maxUnlockedLevel": 3,
+          "completedLevels": [
+            1,
+            2
+          ],
+          "totalCollectiblesFound": 19,
+          "unlockedCompanions": [
+            "nube",
+            "luciernaga"
+          ]
+        },
+        "stats": {
+          "totalPlayTimeSeconds": 4200,
+          "totalJumps": 145,
+          "totalFalls": 12
+        },
+        "updatedAt": "2026-11-05T18:12:16.681Z"
+      }
+    ],
+    [
+      "usr_mw3v4trd_nyqeal",
+      {
+        "_id": "prf_mw3v4trd_itz31d",
+        "userId": "usr_mw3v4trd_nyqeal",
+        "appearance": {
+          "bodyType": "chico",
+          "skinColor": "#f8d5b8",
+          "hairStyle": "cozy_messy",
+          "hairColor": "#4a2e18",
+          "eyesStyle": "bright_round",
+          "eyesColor": "#2b5c8f",
+          "shirtStyle": "hoodie",
+          "shirtColor": "#8b5cf6",
+          "pantsStyle": "joggers",
+          "pantsColor": "#1e293b",
+          "shoesColor": "#06b6d4",
+          "hat": "beanie_cozy",
+          "glasses": "none",
+          "backpack": "explorer_pack",
+          "companion": "hada"
+        },
+        "inventory": {
+          "slots": [
+            "baya",
+            "nuez",
+            "llave",
+            "baya",
+            null
+          ]
+        },
+        "progress": {
+          "maxUnlockedLevel": 2,
+          "completedLevels": [
+            1
+          ],
+          "totalCollectiblesFound": 8,
+          "unlockedCompanions": [
+            "nube",
+            "hada"
+          ]
+        },
+        "stats": {
+          "totalPlayTimeSeconds": 4200,
+          "totalJumps": 145,
+          "totalFalls": 12
+        },
+        "updatedAt": "2026-11-05T18:12:16.681Z"
+      }
+    ]
+  ],
+  "records": [
+    {
+      "_id": "rec_mw3v4zy1_xwqh5o",
+      "userId": "usr_mw3v4trd_ge9z21",
+      "username": "Pionero Cozy",
+      "levelId": 1,
+      "mode": "contrareloj",
+      "timeSeconds": 14.3,
+      "collectiblesFound": 4,
+      "createdAt": "2026-11-05T18:12:24.697Z"
+    },
+    {
+      "_id": "rec_mw3v54bb_p9m8db",
+      "userId": "usr_mw3v4trd_ge9z21",
+      "username": "Pionero Cozy",
+      "levelId": 1,
+      "mode": "normal",
+      "timeSeconds": 18.9,
+      "collectiblesFound": 2,
+      "createdAt": "2026-11-05T18:12:30.359Z"
+    }
+  ],
+  "friendRequests": [],
+  "friendships": []
+}

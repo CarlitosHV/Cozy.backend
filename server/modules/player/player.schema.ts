@@ -31,6 +31,8 @@ export const completeLevelSchema = z.object({
   levelId: z.number().int().min(1).max(10),
   timeSeconds: z.number().positive(),
   relicsFound: z.number().int().min(0).max(50).default(0),
-  mode: z.enum(['free', 'time_trial', 'chase']).default('time_trial'),
+  mode: z
+    .enum(['normal', 'contrareloj', 'persecucion', 'free', 'time_trial', 'chase'])
+    .default('normal'),
   authTicket: z.string().optional(),
 });

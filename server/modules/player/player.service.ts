@@ -3,10 +3,12 @@ import { db } from '../../config/database.js';
 import { redis } from '../../config/redis.js';
 import {
   CharacterAppearance,
+  GameMode,
   InventoryStatus,
   LevelRecordDocument,
   PlayerProfileDocument,
   UserDocument,
+  normalizeGameMode,
 } from '../../models/types.js';
 
 export class PlayerService {
@@ -74,7 +76,7 @@ export class PlayerService {
       levelId: number;
       timeSeconds: number;
       relicsFound: number;
-      mode?: 'free' | 'time_trial' | 'chase';
+      mode?: GameMode;
       authTicket?: string;
     }
   ): Promise<{
@@ -93,7 +95,7 @@ export class PlayerService {
       throw err;
     }
 
-    const mode = data.mode || 'time_trial';
+    const mode = normalizeGameMode(data.mode);
 
     // 1. Level Authority Validation (Must have unlocked level)
     if (data.levelId > profile.progress.maxUnlockedLevel) {

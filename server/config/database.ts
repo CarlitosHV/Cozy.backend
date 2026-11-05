@@ -12,6 +12,7 @@ import {
   PlayerProgress,
   PlayerStats,
   UserDocument,
+  normalizeGameMode,
 } from '../models/types.js';
 
 export const DEFAULT_APPEARANCE: CharacterAppearance = {
@@ -233,9 +234,36 @@ class InMemoryDatabase {
     return fullRecord;
   }
 
-  async getLeaderboard(levelId: number, mode: string = 'time_trial', limit: number = 50): Promise<LevelRecordDocument[]> {
+  async getLeaderboard(levelId: number, mode: string = 'normal', limit: number = 50): Promise<LevelRecordDocument[]> {
+    const canonical = normalizeGameMode(mode);
+
+    if (this.mongoDb) {
+      try {
+        const queryModes =
+          canonical === 'normal'
+            ? ['normal', 'free']
+            : canonical === 'contrareloj'
+            ? ['contrareloj', 'time_trial']
+            : ['persecucion', 'chase'];
+        const docs = await this.mongoDb
+          .collection<LevelRecordDocument>('level_records')
+          .find({ levelId, mode: { $in: queryModes } as any })
+          .sort({ timeSeconds: 1 })
+          .limit(limit)
+          .toArray();
+        if (docs && docs.length > 0) return docs;
+      } catch (err) {
+        console.warn('[Database] MongoDB getLeaderboard query error:', err);
+      }
+    }
+
+    const matchesMode = (rMode: string) => {
+      const rCanonical = normalizeGameMode(rMode);
+      return rCanonical === canonical;
+    };
+
     return this.records
-      .filter((r) => r.levelId === levelId && r.mode === mode)
+      .filter((r) => r.levelId === levelId && matchesMode(r.mode))
       .sort((a, b) => a.timeSeconds - b.timeSeconds)
       .slice(0, limit);
   }
@@ -496,31 +524,6 @@ class InMemoryDatabase {
         updatedAt: now,
       };
       this.profiles.set(userId, profileDoc);
-
-      // Seed some level records
-      this.records.push({
-        _id: this.generateId('rec'),
-        userId,
-        username: u.displayName,
-        levelId: 1,
-        mode: 'time_trial',
-        timeSeconds: u.username === 'pionero_cozy' ? 14.82 : u.username === 'saltarin99' ? 17.45 : 22.18,
-        collectiblesFound: 5,
-        createdAt: now,
-      });
-
-      if (u.progress.completedLevels.includes(2)) {
-        this.records.push({
-          _id: this.generateId('rec'),
-          userId,
-          username: u.displayName,
-          levelId: 2,
-          mode: 'time_trial',
-          timeSeconds: u.username === 'pionero_cozy' ? 24.31 : 29.88,
-          collectiblesFound: 7,
-          createdAt: now,
-        });
-      }
     }
   }
 }
