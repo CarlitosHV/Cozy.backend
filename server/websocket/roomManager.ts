@@ -3,7 +3,7 @@ import { db, DEFAULT_APPEARANCE } from '../config/database.js';
 import { redis } from '../config/redis.js';
 import { AnimationType, PlayerRemoteState } from '../models/types.js';
 
-const PARTY_MAX_PLAYERS = 4;
+const PARTY_MAX_PLAYERS = 10;
 
 interface SocketRoomBinding {
   levelId: number;
@@ -45,13 +45,16 @@ export class RoomManager {
     this.io = io;
   }
 
-  resolveRoomKey(roomId?: string): string {
-    if (!roomId || !roomId.startsWith('party_')) {
-      const err: any = new Error('A private party roomId is required. Public lobbies are disabled.');
-      err.code = 'PRIVATE_ROOM_REQUIRED';
-      throw err;
+  getSocketBinding(socketId: string): SocketRoomBinding | undefined {
+    return this.socketRooms.get(socketId);
+  }
+
+  resolveRoomKey(roomId?: string, levelId: number = 1): string {
+    if (!roomId || !roomId.trim()) {
+      return `party_level_${levelId}`;
     }
-    return roomId;
+    const clean = roomId.trim();
+    return clean.startsWith('party_') ? clean : `party_${clean}`;
   }
 
   redisKeyForRoom(roomKey: string): string {
@@ -81,13 +84,25 @@ export class RoomManager {
     if (!user) return;
 
     const safeLevelId = Number(levelId) || 1;
-    const roomKey = this.resolveRoomKey(roomId);
+    const roomKey = this.resolveRoomKey(roomId, safeLevelId);
     const redisRoomKey = this.redisKeyForRoom(roomKey);
 
-    const currentPlayers = Object.keys(redis.hgetall(redisRoomKey)).length;
-    const alreadyInRoom = Boolean(redis.hget(redisRoomKey, socket.id));
+    // Prune stale entries: disconnected sockets or older sockets for the same user
+    const allExisting = redis.hgetall<PlayerRemoteState>(redisRoomKey);
+    for (const [sId, p] of Object.entries(allExisting)) {
+      const isCurrentSocket = sId === socket.id;
+      const isSameUser = p.userId === user.userId;
+      const isSocketConnected = Boolean(this.io.sockets.sockets.get(sId));
+      if ((isSameUser && !isCurrentSocket) || (!isSocketConnected && !isCurrentSocket)) {
+        redis.hdel(redisRoomKey, sId);
+        delete allExisting[sId];
+      }
+    }
+
+    const currentPlayers = Object.keys(allExisting).length;
+    const alreadyInRoom = Boolean(allExisting[socket.id]);
     if (!alreadyInRoom && currentPlayers >= PARTY_MAX_PLAYERS) {
-      const err: any = new Error('Private party room is full');
+      const err: any = new Error(`Party room is full (max ${PARTY_MAX_PLAYERS} players)`);
       err.code = 'PARTY_FULL';
       throw err;
     }
@@ -100,6 +115,16 @@ export class RoomManager {
     socket.join(roomKey);
     this.socketRooms.set(socket.id, { levelId: safeLevelId, roomKey });
 
+    // Fetch user and profile from database for accurate name and appearance
+    const userDoc = await db.findUserById(user.userId);
+    const resolvedUsername = userDoc?.username || user.username;
+    const resolvedDisplayName =
+      userDoc?.displayName ||
+      userDoc?.username ||
+      user.displayName ||
+      user.username ||
+      'Explorador';
+
     const profile = await db.findProfileByUserId(user.userId);
     const appearance = profile?.appearance || DEFAULT_APPEARANCE;
 
@@ -108,19 +133,29 @@ export class RoomManager {
       { x: 2.5, y: 1.0, z: -1.5 },
       { x: -2.0, y: 1.0, z: 2.0 },
       { x: 1.2, y: 1.0, z: 3.0 },
+      { x: -3.0, y: 1.0, z: -2.0 },
+      { x: 3.5, y: 1.0, z: 1.5 },
+      { x: 0.0, y: 1.0, z: -3.5 },
+      { x: -1.5, y: 1.0, z: -1.0 },
     ];
-    const initialPos = spawnPositions[Math.floor(Math.random() * spawnPositions.length)];
+    const initialPos = spawnPositions[currentPlayers % spawnPositions.length];
 
     const playerState: PlayerRemoteState = {
       userId: user.userId,
-      username: user.username,
-      displayName: user.displayName || user.username,
+      id: user.userId,
+      username: resolvedUsername,
+      displayName: resolvedDisplayName,
+      name: resolvedDisplayName,
+      playerName: resolvedDisplayName,
+      tag: resolvedDisplayName,
+      label: resolvedDisplayName,
       appearance,
       x: initialPos.x,
       y: initialPos.y,
       z: initialPos.z,
       yaw: 0,
       anim: 'idle',
+      position: { x: initialPos.x, y: initialPos.y, z: initialPos.z, yaw: 0 },
       lastUpdate: Date.now(),
       socketId: socket.id,
       levelId: safeLevelId,
@@ -136,6 +171,18 @@ export class RoomManager {
       roomId: roomKey,
       players: playersList,
       yourSpawn: initialPos,
+      player: playerState,
+      self: {
+        userId: user.userId,
+        id: user.userId,
+        username: resolvedUsername,
+        displayName: resolvedDisplayName,
+        name: resolvedDisplayName,
+        playerName: resolvedDisplayName,
+        tag: resolvedDisplayName,
+        label: resolvedDisplayName,
+        appearance,
+      },
     });
 
     // Shared puzzle progress so far (orbs found, rocks moved) for whoever joins late
@@ -149,8 +196,13 @@ export class RoomManager {
 
     socket.to(roomKey).emit('player:joined', {
       userId: user.userId,
-      username: user.username,
-      displayName: playerState.displayName,
+      id: user.userId,
+      username: resolvedUsername,
+      displayName: resolvedDisplayName,
+      name: resolvedDisplayName,
+      playerName: resolvedDisplayName,
+      tag: resolvedDisplayName,
+      label: resolvedDisplayName,
       appearance,
       x: playerState.x,
       y: playerState.y,
@@ -200,18 +252,25 @@ export class RoomManager {
       existing.yaw = data.yaw || 0;
       existing.anim = data.anim || 'idle';
       existing.action = data.action;
+      existing.position = { x: data.x, y: data.y, z: data.z, yaw: data.yaw || 0 };
       existing.lastUpdate = Date.now();
       redis.hset(redisRoomKey, socket.id, existing);
     }
 
     socket.to(binding.roomKey).emit('player:moved', {
       userId: user.userId,
+      id: user.userId,
+      username: existing?.username || user.username,
+      displayName: existing?.displayName || user.displayName || user.username,
+      name: existing?.displayName || user.displayName || user.username,
+      playerName: existing?.displayName || user.displayName || user.username,
       x: data.x,
       y: data.y,
       z: data.z,
-      yaw: data.yaw,
+      yaw: data.yaw || 0,
       anim: data.anim,
       action: data.action,
+      position: { x: data.x, y: data.y, z: data.z, yaw: data.yaw || 0 },
     });
   }
 
@@ -227,6 +286,7 @@ export class RoomManager {
 
     this.io.to(binding.roomKey).emit('companion:power:broadcast', {
       userId: user.userId,
+      id: user.userId,
       username: user.username,
       powerType: data.powerType,
       position: player ? { x: player.x, y: player.y, z: player.z } : null,
@@ -247,6 +307,7 @@ export class RoomManager {
 
     socket.to(binding.roomKey).emit('world:orb', {
       userId: user.userId,
+      id: user.userId,
       username: user.username,
       levelId: binding.levelId,
       orbIndex: data.orbIndex,
@@ -267,6 +328,7 @@ export class RoomManager {
 
     socket.to(binding.roomKey).emit('world:block', {
       userId: user.userId,
+      id: user.userId,
       levelId: binding.levelId,
       blockIndex: data.blockIndex,
       x,
@@ -324,10 +386,25 @@ export class RoomManager {
     const redisRoomKey = this.redisKeyForRoom(binding.roomKey);
     const cached = redis.hget<PlayerRemoteState>(redisRoomKey, socket.id);
 
+    const userDoc = user?.userId ? await db.findUserById(user.userId) : null;
+    const resolvedName =
+      userDoc?.displayName ||
+      userDoc?.username ||
+      user?.displayName ||
+      cached?.displayName ||
+      cached?.username ||
+      user?.username ||
+      'jugador';
+
     const leftPayload = {
       userId: user?.userId || cached?.userId,
+      id: user?.userId || cached?.userId,
       username: user?.username || cached?.username || 'jugador',
-      displayName: user?.displayName || cached?.displayName || cached?.username || user?.username || 'jugador',
+      displayName: resolvedName,
+      name: resolvedName,
+      playerName: resolvedName,
+      tag: resolvedName,
+      label: resolvedName,
       reason,
     };
 
@@ -346,3 +423,4 @@ export class RoomManager {
     await this.handleLeaveRoom(socket, 'disconnect');
   }
 }
+

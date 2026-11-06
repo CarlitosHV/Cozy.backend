@@ -165,3 +165,205 @@ Permite a un jugador registrar el resultado de un nivel en cualquiera de los 3 m
 | `POST` | `/api/v1/player/friends/request` | Envía solicitud de amistad | `{ targetUsername: "nombre" }` |
 | `POST` | `/api/v1/player/friends/accept/:requestId` | Acepta solicitud | Ninguno |
 | `POST` | `/api/v1/player/friends/decline/:requestId` | Rechaza solicitud | Ninguno |
+
+---
+
+## 5. WebSockets & Salas Multijugador en Tiempo Real (`ws://<host>:3000`)
+
+### 5.1. Conexión & Handshake
+Conectar con Socket.io pasando el token de autenticación:
+```javascript
+const socket = io('http://localhost:3000', {
+  auth: { token: accessToken } // o query: { token: accessToken }
+});
+```
+
+---
+
+### 5.2. Unirse a una Sala (`room:join`)
+Soporta partidas de hasta 10 jugadores simultáneos.
+```javascript
+// Enviar al servidor:
+socket.emit('room:join', {
+  levelId: 1,
+  roomId: 'mi_sala_amigos' // Opcional. Si se omite, agrupa automáticamente en 'party_level_1'
+});
+```
+
+---
+
+### 5.3. Respuesta del Servidor al Unirse (`room:state`)
+El servidor emite `room:state` al jugador que se une con la lista de todos los participantes y su spawn inicial.
+
+**Estructura del Payload JSON:**
+```json
+{
+  "levelId": 1,
+  "roomId": "party_mi_sala_amigos",
+  "yourSpawn": { "x": 0.0, "y": 1.0, "z": 0.0 },
+  "players": [
+    {
+      "userId": "usr_98af7a",
+      "id": "usr_98af7a",
+      "username": "carlos_gamer",
+      "displayName": "Carlos El Aventurero",
+      "name": "Carlos El Aventurero",
+      "playerName": "Carlos El Aventurero",
+      "tag": "Carlos El Aventurero",
+      "label": "Carlos El Aventurero",
+      "appearance": {
+        "bodyType": "chico",
+        "skinColor": "#f8d5b8",
+        "hairStyle": "cozy_messy",
+        "hairColor": "#4a2e18",
+        "shirtStyle": "hoodie",
+        "shirtColor": "#4f46e5",
+        "pantsStyle": "joggers",
+        "pantsColor": "#1e293b",
+        "shoesColor": "#f97316",
+        "hat": "beanie_cozy",
+        "glasses": "none",
+        "backpack": "explorer_pack",
+        "companion": "estrella"
+      },
+      "x": 0.0,
+      "y": 1.0,
+      "z": 0.0,
+      "yaw": 0,
+      "anim": "idle",
+      "position": { "x": 0.0, "y": 1.0, "z": 0.0, "yaw": 0 },
+      "lastUpdate": 1741250000000,
+      "socketId": "sock_abc123",
+      "levelId": 1
+    }
+  ],
+  "self": {
+    "userId": "usr_98af7a",
+    "id": "usr_98af7a",
+    "username": "carlos_gamer",
+    "displayName": "Carlos El Aventurero",
+    "name": "Carlos El Aventurero",
+    "playerName": "Carlos El Aventurero",
+    "tag": "Carlos El Aventurero",
+    "label": "Carlos El Aventurero"
+  }
+}
+```
+
+> **Nota para el Frontend:**  
+> Se incluyen todos los alias de nombre comunes (`displayName`, `name`, `playerName`, `tag`, `label`, `username`, `id`, `userId`) para que la etiqueta sobre la cabeza del personaje siempre tome el nombre real del usuario sin importar qué propiedad lea el frontend.
+
+---
+
+### 5.4. Notificación a los Otros Jugadores (`player:joined`)
+Emitido a los demás jugadores de la misma sala cuando alguien nuevo entra:
+```json
+{
+  "userId": "usr_77de8a",
+  "id": "usr_77de8a",
+  "username": "maria_pro",
+  "displayName": "María Pro",
+  "name": "María Pro",
+  "playerName": "María Pro",
+  "tag": "María Pro",
+  "label": "María Pro",
+  "appearance": { ... },
+  "x": 2.5,
+  "y": 1.0,
+  "z": -1.5,
+  "yaw": 0,
+  "anim": "idle",
+  "position": { "x": 2.5, "y": 1.0, "z": -1.5, "yaw": 0 },
+  "lastUpdate": 1741250000100,
+  "levelId": 1
+}
+```
+
+---
+
+### 5.5. Sincronización de Movimiento (`player:sync` & `player:moved`)
+- **Cliente envía (`player:sync`):**
+```javascript
+socket.emit('player:sync', {
+  x: 5.2,
+  y: 1.0,
+  z: -3.4,
+  yaw: 1.57,
+  anim: 'run',
+  action: 'jump' // opcional
+});
+```
+- **Servidor retransmite (`player:moved`) a los demás:**
+```json
+{
+  "userId": "usr_77de8a",
+  "id": "usr_77de8a",
+  "username": "maria_pro",
+  "displayName": "María Pro",
+  "name": "María Pro",
+  "playerName": "María Pro",
+  "x": 5.2,
+  "y": 1.0,
+  "z": -3.4,
+  "yaw": 1.57,
+  "anim": "run",
+  "action": "jump",
+  "position": { "x": 5.2, "y": 1.0, "z": -3.4, "yaw": 1.57 }
+}
+```
+
+---
+
+### 5.6. Salida de Jugador (`player:left`)
+```json
+{
+  "userId": "usr_77de8a",
+  "id": "usr_77de8a",
+  "username": "maria_pro",
+  "displayName": "María Pro",
+  "name": "María Pro",
+  "playerName": "María Pro",
+  "reason": "leave" // o "disconnect"
+}
+```
+
+---
+
+### 5.7. Invitaciones de Amigos a Partidas Multijugador
+- **Enviar invitación (`invite:send`):**
+```javascript
+socket.emit('invite:send', {
+  toUserId: 'usr_amigo_123',
+  levelId: 1,
+  roomId: 'party_sala_actual' // Opcional: si ya estás en una sala, los amigos se unen a la misma
+});
+```
+- **Amigo recibe invitación (`invite:received`):**
+```json
+{
+  "inviteId": "inv_9b81_ab2c",
+  "fromUserId": "usr_host_99",
+  "fromUsername": "Carlos El Aventurero",
+  "levelId": 1,
+  "roomId": "party_sala_actual",
+  "expiresInSeconds": 60
+}
+```
+- **Responder invitación (`invite:respond`):**
+```javascript
+socket.emit('invite:respond', {
+  inviteId: 'inv_9b81_ab2c',
+  accept: true
+});
+```
+- **Resultado emitido a ambos (`invite:result`):**
+```json
+{
+  "inviteId": "inv_9b81_ab2c",
+  "accepted": true,
+  "roomId": "party_sala_actual",
+  "levelId": 1
+}
+```
+*Ambos clientes proceden a emitir `room:join` con el mismo `roomId` obtenido en `invite:result`, permitiendo que 3, 4 o más amigos se unan secuencialmente a la misma sala sin desincronizarse.*
+

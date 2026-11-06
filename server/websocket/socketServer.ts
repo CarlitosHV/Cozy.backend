@@ -20,7 +20,7 @@ export function setupSocketServer(httpServer: HttpServer): { io: Server; roomMan
   });
 
   const roomManager = new RoomManager(io);
-  const inviteManager = new InviteManager(io);
+  const inviteManager = new InviteManager(io, roomManager);
 
   io.use((socket: Socket, next) => {
     const token =
@@ -37,6 +37,7 @@ export function setupSocketServer(httpServer: HttpServer): { io: Server; roomMan
       socket.data.user = {
         userId: decoded.sub,
         username: decoded.username,
+        displayName: decoded.displayName || decoded.username,
         role: decoded.role,
       };
       next();
@@ -96,7 +97,7 @@ export function setupSocketServer(httpServer: HttpServer): { io: Server; roomMan
       roomManager.handleWorldEvent(socket, data);
     });
 
-    socket.on('invite:send', async (data: { toUserId?: string; levelId?: number }) => {
+    socket.on('invite:send', async (data: { toUserId?: string; levelId?: number; roomId?: string }) => {
       try {
         await inviteManager.handleSendInvite(socket, data);
       } catch (err: any) {

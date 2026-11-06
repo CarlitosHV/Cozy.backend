@@ -11,6 +11,7 @@ export class AuthService {
     const payload: JwtPayload = {
       sub: user._id,
       username: user.username,
+      displayName: user.displayName || user.username,
       role: user.role,
     };
     return jwt.sign(payload as object, CONFIG.JWT_SECRET as jwt.Secret, {

@@ -3,6 +3,7 @@ import { db } from '../config/database.js';
 import { redis } from '../config/redis.js';
 import { GameInvitePayload } from '../models/types.js';
 import { emitToUser, getUserSocketId } from './presence.js';
+import { RoomManager } from './roomManager.js';
 
 const INVITE_TTL_SECONDS = 60;
 
@@ -19,9 +20,12 @@ function createPartyId(): string {
 }
 
 export class InviteManager {
-  constructor(private io: Server) {}
+  constructor(private io: Server, private roomManager: RoomManager) {}
 
-  async handleSendInvite(socket: Socket, data: { toUserId?: string; levelId?: number }): Promise<void> {
+  async handleSendInvite(
+    socket: Socket,
+    data: { toUserId?: string; levelId?: number; roomId?: string }
+  ): Promise<void> {
     const user = socket.data.user;
     if (!user) return;
 
@@ -50,12 +54,21 @@ export class InviteManager {
       return;
     }
 
+    // Determine party room: use passed roomId, or sender's active room binding, or create one
+    const senderBinding = this.roomManager.getSocketBinding(socket.id);
+    const resolvedRoomId = data?.roomId || senderBinding?.roomKey || createPartyId();
+
+    const userDoc = await db.findUserById(user.userId);
+    const fromUsername = userDoc?.displayName || userDoc?.username || user.displayName || user.username;
+
     const inviteId = createInviteId();
     const invite: GameInvitePayload = {
       inviteId,
       fromUserId: user.userId,
+      fromUsername,
       toUserId,
       levelId,
+      roomId: resolvedRoomId,
       createdAt: Date.now(),
     };
 
@@ -64,8 +77,9 @@ export class InviteManager {
     const delivered = emitToUser(this.io, toUserId, 'invite:received', {
       inviteId,
       fromUserId: user.userId,
-      fromUsername: user.username,
+      fromUsername,
       levelId,
+      roomId: resolvedRoomId,
       expiresInSeconds: INVITE_TTL_SECONDS,
     });
 
@@ -79,6 +93,7 @@ export class InviteManager {
       inviteId,
       toUserId,
       levelId,
+      roomId: resolvedRoomId,
       expiresInSeconds: INVITE_TTL_SECONDS,
     });
   }
@@ -113,21 +128,29 @@ export class InviteManager {
         inviteId,
         accepted: false,
         levelId: invite.levelId,
+        roomId: invite.roomId,
       };
       socket.emit('invite:result', result);
       emitToUser(this.io, invite.fromUserId, 'invite:result', result);
       return;
     }
 
-    const roomId = createPartyId();
+    // Reuse existing roomId from invite so all invited friends join the same room!
+    const inviterSocketId = getUserSocketId(invite.fromUserId);
+    const inviterBinding = inviterSocketId ? this.roomManager.getSocketBinding(inviterSocketId) : undefined;
+    const finalRoomId = invite.roomId || inviterBinding?.roomKey || createPartyId();
+
     const result = {
       inviteId,
       accepted: true,
-      roomId,
+      roomId: finalRoomId,
       levelId: invite.levelId,
+      toUserId: user.userId,
+      fromUserId: invite.fromUserId,
     };
 
     socket.emit('invite:result', result);
     emitToUser(this.io, invite.fromUserId, 'invite:result', result);
   }
 }
+

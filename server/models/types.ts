@@ -83,8 +83,13 @@ export interface LevelRecordDocument {
 
 export interface PlayerRemoteState {
   userId: string;
+  id?: string;
   username: string;
   displayName?: string;
+  name?: string;
+  playerName?: string;
+  tag?: string;
+  label?: string;
   appearance: CharacterAppearance;
   x: number;
   y: number;
@@ -92,6 +97,7 @@ export interface PlayerRemoteState {
   yaw: number;
   anim: AnimationType;
   action?: string;
+  position?: { x: number; y: number; z: number; yaw: number };
   lastUpdate: number;
   socketId: string;
   levelId: number;
@@ -109,6 +115,7 @@ export interface FriendRequestDocument {
 export interface GameInvitePayload {
   inviteId: string;
   fromUserId: string;
+  fromUsername?: string;
   toUserId: string;
   levelId: number;
   roomId?: string;
@@ -118,7 +125,9 @@ export interface GameInvitePayload {
 export interface JwtPayload {
   sub: string;
   username: string;
+  displayName?: string;
   role: 'player' | 'admin';
   iat?: number;
   exp?: number;
 }
+
