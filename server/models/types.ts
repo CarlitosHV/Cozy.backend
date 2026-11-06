@@ -90,7 +90,10 @@ export interface PlayerRemoteState {
   playerName?: string;
   tag?: string;
   label?: string;
-  appearance: CharacterAppearance;
+  /** Account name (the one friends search for) */
+  accountName?: string;
+  /** Profile appearance, or the character the game sent when joining (see websocket/playerLook.ts) */
+  appearance: CharacterAppearance | Record<string, string | number | boolean>;
   x: number;
   y: number;
   z: number;

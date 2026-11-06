@@ -2,8 +2,16 @@ import { Server, Socket } from 'socket.io';
 import { db, DEFAULT_APPEARANCE } from '../config/database.js';
 import { redis } from '../config/redis.js';
 import { AnimationType, PlayerRemoteState, RoomInfoResponse } from '../models/types.js';
+import { ClientAppearance, characterNameOf, sanitizeClientAppearance, shownName } from './playerLook.js';
 
 const PARTY_MAX_PLAYERS = 10;
+
+/** Levels are generated endlessly; this is only a sanity limit for ids coming from clients. */
+const MAX_LEVEL_ID = 9999;
+
+function clampLevel(levelId: unknown): number {
+  return Math.max(1, Math.min(MAX_LEVEL_ID, Math.floor(Number(levelId)) || 1));
+}
 
 interface SocketRoomBinding {
   levelId: number;
@@ -40,6 +48,8 @@ export class RoomManager {
   private socketRooms = new Map<string, SocketRoomBinding>();
   /** Keyed by `${roomKey}:${levelId}` so a party member changing level doesn't wipe the others' progress */
   private worldStates = new Map<string, WorldState>();
+  /** Character each socket sent (look + name), kept for rejoins and level changes */
+  private socketLooks = new Map<string, { appearance: ClientAppearance | null; characterName: string }>();
 
   constructor(io: Server) {
     this.io = io;
@@ -79,11 +89,31 @@ export class RoomManager {
     return typeof n === 'number' && Number.isInteger(n) && n >= 0 && n < MAX_WORLD_INDEX;
   }
 
-  async handleJoinRoom(socket: Socket, levelId: number, roomId?: string): Promise<void> {
+  /** Level the user is currently playing inside that party room, if they are in it. */
+  getUserLevelInRoom(userId: string, roomKey: string): number | null {
+    for (const [socketId, b] of this.socketRooms.entries()) {
+      if (b.roomKey !== roomKey) continue;
+      const s = this.io.sockets.sockets.get(socketId);
+      if (s?.data?.user?.userId === userId) return b.levelId;
+    }
+    return null;
+  }
+
+  /** Remember the character a socket sent (only when it sent a valid one). */
+  private rememberLook(socket: Socket, look?: { appearance?: unknown; name?: unknown }): { appearance: ClientAppearance | null; characterName: string } {
+    const prev = this.socketLooks.get(socket.id) || { appearance: null, characterName: '' };
+    const appearance = sanitizeClientAppearance(look?.appearance) || prev.appearance;
+    const characterName = characterNameOf(look?.appearance, look?.name) || prev.characterName;
+    const next = { appearance, characterName };
+    this.socketLooks.set(socket.id, next);
+    return next;
+  }
+
+  async handleJoinRoom(socket: Socket, levelId: number, roomId?: string, look?: { appearance?: unknown; name?: unknown }): Promise<void> {
     const user = socket.data.user;
     if (!user) return;
 
-    const safeLevelId = Number(levelId) || 1;
+    const safeLevelId = clampLevel(levelId);
     const roomKey = this.resolveRoomKey(roomId, safeLevelId);
     const redisRoomKey = this.redisKeyForRoom(roomKey);
 
@@ -125,8 +155,12 @@ export class RoomManager {
       user.username ||
       'Explorador';
 
+    // The character made in the game wins over the saved profile (guests, unsaved changes…)
+    const sent = this.rememberLook(socket, look);
     const profile = await db.findProfileByUserId(user.userId);
-    const appearance = profile?.appearance || DEFAULT_APPEARANCE;
+    const appearance = sent.appearance || profile?.appearance || DEFAULT_APPEARANCE;
+    const accountName = resolvedDisplayName;
+    const shown = shownName(sent.characterName, accountName);
 
     const spawnPositions = [
       { x: 0, y: 1.0, z: 0 },
@@ -144,11 +178,12 @@ export class RoomManager {
       userId: user.userId,
       id: user.userId,
       username: resolvedUsername,
-      displayName: resolvedDisplayName,
-      name: resolvedDisplayName,
-      playerName: resolvedDisplayName,
-      tag: resolvedDisplayName,
-      label: resolvedDisplayName,
+      displayName: shown,
+      name: shown,
+      playerName: shown,
+      tag: shown,
+      label: shown,
+      accountName,
       appearance,
       x: initialPos.x,
       y: initialPos.y,
@@ -176,11 +211,12 @@ export class RoomManager {
         userId: user.userId,
         id: user.userId,
         username: resolvedUsername,
-        displayName: resolvedDisplayName,
-        name: resolvedDisplayName,
-        playerName: resolvedDisplayName,
-        tag: resolvedDisplayName,
-        label: resolvedDisplayName,
+        displayName: shown,
+        name: shown,
+        playerName: shown,
+        tag: shown,
+        label: shown,
+        accountName,
         appearance,
       },
     });
@@ -198,11 +234,12 @@ export class RoomManager {
       userId: user.userId,
       id: user.userId,
       username: resolvedUsername,
-      displayName: resolvedDisplayName,
-      name: resolvedDisplayName,
-      playerName: resolvedDisplayName,
-      tag: resolvedDisplayName,
-      label: resolvedDisplayName,
+      displayName: shown,
+      name: shown,
+      playerName: shown,
+      tag: shown,
+      label: shown,
+      accountName,
       appearance,
       x: playerState.x,
       y: playerState.y,
@@ -260,6 +297,7 @@ export class RoomManager {
     socket.to(binding.roomKey).emit('player:moved', {
       userId: user.userId,
       id: user.userId,
+      levelId: binding.levelId,
       username: existing?.username || user.username,
       displayName: existing?.displayName || user.displayName || user.username,
       name: existing?.displayName || user.displayName || user.username,
@@ -271,6 +309,44 @@ export class RoomManager {
       anim: data.anim,
       action: data.action,
       position: { x: data.x, y: data.y, z: data.z, yaw: data.yaw || 0 },
+    });
+  }
+
+  /**
+   * The player changed their character (or its name) while in a party: update the room and
+   * show the new look to everybody right away.
+   */
+  handlePlayerProfile(socket: Socket, data: { appearance?: unknown; name?: unknown }): void {
+    const user = socket.data.user;
+    if (!user) return;
+    const look = this.rememberLook(socket, data);
+    const binding = this.socketRooms.get(socket.id);
+    if (!binding) return;
+
+    const redisRoomKey = this.redisKeyForRoom(binding.roomKey);
+    const existing = redis.hget<PlayerRemoteState>(redisRoomKey, socket.id);
+    if (!existing) return;
+    const accountName = existing.accountName || existing.displayName || user.displayName || user.username;
+    const shown = shownName(look.characterName, accountName);
+    if (look.appearance) existing.appearance = look.appearance;
+    existing.displayName = shown;
+    existing.name = shown;
+    existing.playerName = shown;
+    existing.tag = shown;
+    existing.label = shown;
+    existing.accountName = accountName;
+    redis.hset(redisRoomKey, socket.id, existing);
+
+    socket.to(binding.roomKey).emit('player:profile', {
+      userId: user.userId,
+      id: user.userId,
+      username: existing.username,
+      displayName: shown,
+      name: shown,
+      playerName: shown,
+      accountName,
+      appearance: existing.appearance,
+      levelId: binding.levelId,
     });
   }
 
@@ -421,6 +497,7 @@ export class RoomManager {
 
   async handleDisconnect(socket: Socket): Promise<void> {
     await this.handleLeaveRoom(socket, 'disconnect');
+    this.socketLooks.delete(socket.id);
   }
 
   // --- Synchronized Level Advancement ---
@@ -434,7 +511,7 @@ export class RoomManager {
       return;
     }
 
-    const newLevelId = Math.max(1, Math.min(10, Number(targetLevelId) || 1));
+    const newLevelId = clampLevel(targetLevelId);
     const roomKey = binding.roomKey;
     const redisRoomKey = this.redisKeyForRoom(roomKey);
 
@@ -501,7 +578,7 @@ export class RoomManager {
   async handleAdvanceLevel(socket: Socket): Promise<void> {
     const binding = this.socketRooms.get(socket.id);
     if (!binding) return;
-    const nextLevel = Math.min(10, binding.levelId + 1);
+    const nextLevel = clampLevel(binding.levelId + 1);
     await this.handleLevelChange(socket, nextLevel);
   }
 
@@ -624,7 +701,7 @@ export class RoomManager {
         levelId: safeLevelId,
         summary,
         canAdvance: true,
-        nextLevelId: Math.min(10, safeLevelId + 1),
+        nextLevelId: clampLevel(safeLevelId + 1),
         message: `¡Todos los jugadores de la sala terminaron el Nivel ${safeLevelId}! Pueden avanzar al siguiente.`,
       });
     }

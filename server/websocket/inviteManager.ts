@@ -30,7 +30,9 @@ export class InviteManager {
     if (!user) return;
 
     const toUserId = String(data?.toUserId || '');
-    const levelId = Number(data?.levelId) || 1;
+    const senderBinding0 = this.roomManager.getSocketBinding(socket.id);
+    // Invite to the level the sender is actually in when already in a party room
+    const levelId = Math.max(1, Math.floor(Number(senderBinding0?.levelId ?? data?.levelId) || 1));
 
     if (!toUserId) {
       socket.emit('error', { code: 'INVALID_INVITE', message: 'toUserId is required' });
@@ -139,12 +141,18 @@ export class InviteManager {
     const inviterSocketId = getUserSocketId(invite.fromUserId);
     const inviterBinding = inviterSocketId ? this.roomManager.getSocketBinding(inviterSocketId) : undefined;
     const finalRoomId = invite.roomId || inviterBinding?.roomKey || createPartyId();
+    // Join the level the inviter is playing right now (they may have moved on since inviting)
+    const finalLevelId =
+      this.roomManager.getUserLevelInRoom(invite.fromUserId, finalRoomId) ??
+      (inviterBinding && inviterBinding.roomKey === finalRoomId ? inviterBinding.levelId : null) ??
+      invite.levelId;
 
     const result = {
       inviteId,
       accepted: true,
       roomId: finalRoomId,
-      levelId: invite.levelId,
+      levelId: finalLevelId,
+      fromUsername: invite.fromUsername,
       toUserId: user.userId,
       fromUserId: invite.fromUserId,
     };

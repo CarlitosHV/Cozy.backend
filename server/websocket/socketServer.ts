@@ -52,11 +52,12 @@ export function setupSocketServer(httpServer: HttpServer): { io: Server; roomMan
       markUserOnline(user.userId, socket.id);
     }
 
-    socket.on('room:join', async (data: { levelId?: number; roomId?: string }) => {
+    socket.on('room:join', async (data: { levelId?: number; roomId?: string; appearance?: unknown; name?: unknown }) => {
       try {
         const levelId = Number(data?.levelId) || 1;
         const roomId = data?.roomId ? String(data.roomId) : undefined;
-        await roomManager.handleJoinRoom(socket, levelId, roomId);
+        // The game sends the character made in "Personalizar" so the party sees it as it is
+        await roomManager.handleJoinRoom(socket, levelId, roomId, { appearance: data?.appearance, name: data?.name });
       } catch (err: any) {
         socket.emit('error', {
           code: err.code || 'JOIN_FAILED',
@@ -78,6 +79,11 @@ export function setupSocketServer(httpServer: HttpServer): { io: Server; roomMan
 
     socket.on('player:sync', (data: any) => {
       roomManager.handlePlayerSync(socket, data);
+    });
+
+    // New look or name while in a party
+    socket.on('player:profile', (data: { appearance?: unknown; name?: unknown }) => {
+      roomManager.handlePlayerProfile(socket, data);
     });
 
     socket.on('companion:power', (data: { powerType: string }) => {
