@@ -19,24 +19,36 @@ class RedisStore {
   public client: Redis | null = null;
 
   constructor() {
+    // If REDIS_URL provided, pre-configure client
     if (CONFIG.REDIS_URL) {
       try {
         this.client = new Redis(CONFIG.REDIS_URL, {
-          maxRetriesPerRequest: 1,
+          maxRetriesPerRequest: 2,
           lazyConnect: true,
+          connectTimeout: 5000,
           retryStrategy(times) {
             if (times > 3) return null;
             return Math.min(times * 1000, 3000);
           },
         });
-        this.client.connect().then(() => {
-          console.log(`[Redis] Connected to external Redis at ${CONFIG.REDIS_URL}`);
-        }).catch((err) => {
-          console.warn(`[Redis] Could not connect to external Redis (${err.message}). Using local fast cache.`);
-        });
       } catch (err: any) {
         console.warn(`[Redis] Initialization warning: ${err.message}`);
       }
+    }
+  }
+
+  async connectRedis(): Promise<boolean> {
+    if (!this.client || !CONFIG.REDIS_URL) {
+      console.log('[Redis] No REDIS_URL configured. Operating in high-speed local memory cache mode.');
+      return false;
+    }
+    try {
+      await this.client.connect();
+      console.log(`[Redis] Connected to external Redis successfully at ${CONFIG.REDIS_URL}`);
+      return true;
+    } catch (err: any) {
+      console.warn(`[Redis] Could not connect to external Redis (${err.message}). Using local fast cache fallback.`);
+      return false;
     }
   }
 
@@ -65,6 +77,9 @@ class RedisStore {
   }
 
   del(key: string): boolean {
+    if (this.client && this.client.status === 'ready') {
+      this.client.del(key).catch(() => {});
+    }
     return this.kv.delete(key);
   }
 
@@ -72,6 +87,9 @@ class RedisStore {
     const item = this.kv.get(key);
     if (!item) return false;
     item.expiresAt = Date.now() + seconds * 1000;
+    if (this.client && this.client.status === 'ready') {
+      this.client.expire(key, seconds).catch(() => {});
+    }
     return true;
   }
 
@@ -81,10 +99,16 @@ class RedisStore {
       this.sets.set(key, new Set());
     }
     this.sets.get(key)!.add(member);
+    if (this.client && this.client.status === 'ready') {
+      this.client.sadd(key, member).catch(() => {});
+    }
   }
 
   srem(key: string, member: string): boolean {
     const set = this.sets.get(key);
+    if (this.client && this.client.status === 'ready') {
+      this.client.srem(key, member).catch(() => {});
+    }
     if (!set) return false;
     return set.delete(member);
   }
@@ -111,6 +135,10 @@ class RedisStore {
       this.hashes.set(key, new Map());
     }
     this.hashes.get(key)!.set(field, value);
+    if (this.client && this.client.status === 'ready') {
+      const valStr = typeof value === 'string' ? value : JSON.stringify(value);
+      this.client.hset(key, field, valStr).catch(() => {});
+    }
   }
 
   hget<T = any>(key: string, field: string): T | null {
@@ -121,6 +149,9 @@ class RedisStore {
 
   hdel(key: string, field: string): boolean {
     const map = this.hashes.get(key);
+    if (this.client && this.client.status === 'ready') {
+      this.client.hdel(key, field).catch(() => {});
+    }
     if (!map) return false;
     return map.delete(field);
   }
@@ -149,6 +180,9 @@ class RedisStore {
     }
     // Lowest score first (fastest time)
     list.sort((a, b) => a.score - b.score);
+    if (this.client && this.client.status === 'ready') {
+      this.client.zadd(key, score, member).catch(() => {});
+    }
   }
 
   zrange(key: string, start: number = 0, stop: number = -1): SortedSetMember[] {

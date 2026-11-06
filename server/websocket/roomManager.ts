@@ -1,7 +1,7 @@
 import { Server, Socket } from 'socket.io';
 import { db, DEFAULT_APPEARANCE } from '../config/database.js';
 import { redis } from '../config/redis.js';
-import { AnimationType, PlayerRemoteState } from '../models/types.js';
+import { AnimationType, PlayerRemoteState, RoomInfoResponse } from '../models/types.js';
 
 const PARTY_MAX_PLAYERS = 10;
 
@@ -421,6 +421,276 @@ export class RoomManager {
 
   async handleDisconnect(socket: Socket): Promise<void> {
     await this.handleLeaveRoom(socket, 'disconnect');
+  }
+
+  // --- Synchronized Level Advancement ---
+  async handleLevelChange(socket: Socket, targetLevelId: number): Promise<void> {
+    const user = socket.data.user;
+    if (!user) return;
+
+    const binding = this.socketRooms.get(socket.id);
+    if (!binding) {
+      socket.emit('error', { code: 'NOT_IN_ROOM', message: 'You must be in a room to change levels' });
+      return;
+    }
+
+    const newLevelId = Math.max(1, Math.min(10, Number(targetLevelId) || 1));
+    const roomKey = binding.roomKey;
+    const redisRoomKey = this.redisKeyForRoom(roomKey);
+
+    // Update level for all sockets in this room
+    for (const [, b] of this.socketRooms.entries()) {
+      if (b.roomKey === roomKey) {
+        b.levelId = newLevelId;
+      }
+    }
+
+    const spawnPositions = [
+      { x: 0, y: 1.0, z: 0 },
+      { x: 2.5, y: 1.0, z: -1.5 },
+      { x: -2.0, y: 1.0, z: 2.0 },
+      { x: 1.2, y: 1.0, z: 3.0 },
+      { x: -3.0, y: 1.0, z: -2.0 },
+      { x: 3.5, y: 1.0, z: 1.5 },
+      { x: 0.0, y: 1.0, z: -3.5 },
+      { x: -1.5, y: 1.0, z: -1.0 },
+    ];
+
+    const playersMap = redis.hgetall<PlayerRemoteState>(redisRoomKey);
+    let idx = 0;
+    for (const [sId, p] of Object.entries(playersMap)) {
+      const spawn = spawnPositions[idx % spawnPositions.length];
+      idx++;
+      p.levelId = newLevelId;
+      p.x = spawn.x;
+      p.y = spawn.y;
+      p.z = spawn.z;
+      p.yaw = 0;
+      p.anim = 'idle';
+      p.position = { x: spawn.x, y: spawn.y, z: spawn.z, yaw: 0 };
+      p.isFinished = false;
+      p.finishedAt = undefined;
+      p.finishTimeSeconds = undefined;
+      p.isSpectating = false;
+      p.spectateTargetUserId = undefined;
+      p.rank = undefined;
+      p.lastUpdate = Date.now();
+      redis.hset(redisRoomKey, sId, p);
+    }
+
+    const updatedPlayers = Object.values(redis.hgetall<PlayerRemoteState>(redisRoomKey));
+
+    // Broadcast synchronized level transition to all members of the party
+    this.io.to(roomKey).emit('room:level_changed', {
+      roomId: roomKey,
+      levelId: newLevelId,
+      message: `El grupo avanzó al nivel ${newLevelId}`,
+      players: updatedPlayers,
+    });
+
+    // Send initial world state for the new level
+    const world = this.getWorld(roomKey, newLevelId);
+    this.io.to(roomKey).emit('world:state', {
+      levelId: newLevelId,
+      orbs: [...world.orbs],
+      blocks: [...world.blocks.entries()].map(([index, pt]) => ({ index, x: pt.x, y: pt.y, z: pt.z })),
+      events: world.events,
+    });
+  }
+
+  async handleAdvanceLevel(socket: Socket): Promise<void> {
+    const binding = this.socketRooms.get(socket.id);
+    if (!binding) return;
+    const nextLevel = Math.min(10, binding.levelId + 1);
+    await this.handleLevelChange(socket, nextLevel);
+  }
+
+  // --- Spectator Mode & Level Completion ---
+  async handlePlayerFinish(
+    socket: Socket,
+    data: { levelId?: number; timeSeconds?: number; collectiblesFound?: number }
+  ): Promise<void> {
+    const user = socket.data.user;
+    if (!user) return;
+
+    const binding = this.socketRooms.get(socket.id);
+    if (!binding) return;
+
+    const safeLevelId = Number(data?.levelId) || binding.levelId;
+    const timeSeconds = Math.max(0.1, Number(data?.timeSeconds) || 0);
+    const collectiblesFound = Number(data?.collectiblesFound) || 0;
+
+    const redisRoomKey = this.redisKeyForRoom(binding.roomKey);
+    const player = redis.hget<PlayerRemoteState>(redisRoomKey, socket.id);
+    if (!player) return;
+
+    if (player.isFinished) return;
+
+    const allPlayersInRoom = Object.values(redis.hgetall<PlayerRemoteState>(redisRoomKey));
+    const alreadyFinishedCount = allPlayersInRoom.filter((p) => p.isFinished).length;
+    const finishRank = alreadyFinishedCount + 1;
+
+    player.isFinished = true;
+    player.finishedAt = Date.now();
+    player.finishTimeSeconds = timeSeconds;
+    player.rank = finishRank;
+    player.isSpectating = true;
+
+    // Remaining active (not yet finished) players to spectate
+    const remainingActive = allPlayersInRoom.filter(
+      (p) => !p.isFinished && p.userId !== user.userId
+    );
+    const targetUserId = remainingActive[0]?.userId || undefined;
+    player.spectateTargetUserId = targetUserId;
+
+    redis.hset(redisRoomKey, socket.id, player);
+
+    // Save record to DB
+    try {
+      await db.addRecord({
+        userId: user.userId,
+        username: user.username,
+        levelId: safeLevelId,
+        mode: 'normal',
+        timeSeconds,
+        collectiblesFound,
+      });
+    } catch (err: any) {
+      console.warn('[RoomManager] Failed to record level completion:', err.message);
+    }
+
+    // 1. Send spectator confirmation to the finished player
+    socket.emit('spectate:started', {
+      isSpectating: true,
+      targetUserId,
+      rank: finishRank,
+      timeSeconds,
+      activePlayers: remainingActive.map((p) => ({
+        userId: p.userId,
+        id: p.userId,
+        username: p.username,
+        displayName: p.displayName,
+        name: p.displayName,
+        playerName: p.displayName,
+        position: p.position || { x: p.x, y: p.y, z: p.z },
+      })),
+      message: `¡Completaste el nivel en posición #${finishRank} (${timeSeconds}s)! Entrando en modo espectador hasta que todos terminen.`,
+    });
+
+    // 2. Broadcast to entire room that this player finished
+    const currentRoomPlayers = Object.values(redis.hgetall<PlayerRemoteState>(redisRoomKey));
+    const finishedList = currentRoomPlayers.filter((p) => p.isFinished);
+    const stillPlaying = currentRoomPlayers.filter((p) => !p.isFinished);
+    const isAllFinished = stillPlaying.length === 0;
+
+    this.io.to(binding.roomKey).emit('room:player_finished', {
+      userId: user.userId,
+      id: user.userId,
+      username: user.username,
+      displayName: player.displayName,
+      name: player.displayName,
+      playerName: player.displayName,
+      timeSeconds,
+      rank: finishRank,
+      isSpectating: true,
+      allFinished: isAllFinished,
+      finishedCount: finishedList.length,
+      totalPlayers: currentRoomPlayers.length,
+      remainingPlayers: stillPlaying.map((p) => ({
+        userId: p.userId,
+        id: p.userId,
+        username: p.username,
+        displayName: p.displayName,
+      })),
+    });
+
+    // 3. If ALL players finished the level, emit summary
+    if (isAllFinished) {
+      const summary = finishedList
+        .sort((a, b) => (a.finishTimeSeconds || 0) - (b.finishTimeSeconds || 0))
+        .map((p, i) => ({
+          rank: i + 1,
+          userId: p.userId,
+          id: p.userId,
+          username: p.username,
+          displayName: p.displayName || p.username,
+          name: p.displayName || p.username,
+          playerName: p.displayName || p.username,
+          timeSeconds: p.finishTimeSeconds || 0,
+        }));
+
+      this.io.to(binding.roomKey).emit('room:all_finished', {
+        roomId: binding.roomKey,
+        levelId: safeLevelId,
+        summary,
+        canAdvance: true,
+        nextLevelId: Math.min(10, safeLevelId + 1),
+        message: `¡Todos los jugadores de la sala terminaron el Nivel ${safeLevelId}! Pueden avanzar al siguiente.`,
+      });
+    }
+  }
+
+  handleSpectateSwitch(socket: Socket, data: { targetUserId: string }): void {
+    const user = socket.data.user;
+    if (!user) return;
+    const binding = this.socketRooms.get(socket.id);
+    if (!binding) return;
+
+    const redisRoomKey = this.redisKeyForRoom(binding.roomKey);
+    const player = redis.hget<PlayerRemoteState>(redisRoomKey, socket.id);
+    if (player && player.isSpectating) {
+      player.spectateTargetUserId = data.targetUserId;
+      redis.hset(redisRoomKey, socket.id, player);
+      socket.emit('spectate:switched', { targetUserId: data.targetUserId });
+    }
+  }
+
+  // --- Query Helpers for REST API ---
+  getRoomInfo(roomId: string): RoomInfoResponse | null {
+    const cleanRoomKey = this.resolveRoomKey(roomId);
+    const redisRoomKey = this.redisKeyForRoom(cleanRoomKey);
+    const playersMap = redis.hgetall<PlayerRemoteState>(redisRoomKey);
+    const players = Object.values(playersMap);
+    if (players.length === 0) return null;
+
+    const finishedCount = players.filter((p) => p.isFinished).length;
+    const spectatorCount = players.filter((p) => p.isSpectating).length;
+    const levelId = players[0]?.levelId || 1;
+
+    return {
+      roomId: cleanRoomKey,
+      levelId,
+      playerCount: players.length,
+      maxPlayers: PARTY_MAX_PLAYERS,
+      players,
+      finishedCount,
+      allFinished: finishedCount === players.length,
+      spectatorCount,
+    };
+  }
+
+  getUserRoom(userId: string): RoomInfoResponse | null {
+    for (const [socketId, binding] of this.socketRooms.entries()) {
+      const redisRoomKey = this.redisKeyForRoom(binding.roomKey);
+      const player = redis.hget<PlayerRemoteState>(redisRoomKey, socketId);
+      if (player && player.userId === userId) {
+        return this.getRoomInfo(binding.roomKey);
+      }
+    }
+    return null;
+  }
+
+  listActiveRooms(): RoomInfoResponse[] {
+    const uniqueRoomKeys = new Set<string>();
+    for (const binding of this.socketRooms.values()) {
+      uniqueRoomKeys.add(binding.roomKey);
+    }
+    const results: RoomInfoResponse[] = [];
+    for (const rKey of uniqueRoomKeys) {
+      const info = this.getRoomInfo(rKey);
+      if (info) results.push(info);
+    }
+    return results;
   }
 }
 

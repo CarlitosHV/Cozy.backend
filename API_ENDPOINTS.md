@@ -168,6 +168,18 @@ Permite a un jugador registrar el resultado de un nivel en cualquiera de los 3 m
 
 ---
 
+## 4.1. Salas Multijugador REST (`/api/v1/rooms`)
+*(Documentación completa en detalle en `ROOMS_API.md`)*
+
+| Método | Endpoint | Descripción | Body / Respuesta |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/rooms/create` | Crea o registra un código de sala | `{ levelId?: 1, customCode?: "amigos" }` |
+| `GET` | `/api/v1/rooms` | Lista todas las salas activas y jugadores | `{ totalActiveRooms, rooms }` |
+| `GET` | `/api/v1/rooms/my-room` | Obtiene la sala activa del usuario autenticado | `{ roomId, levelId, players, spectatorCount }` |
+| `GET` | `/api/v1/rooms/:roomId` | Obtiene el estado detallado de una sala | Detalle de jugadores, meta y espectadores |
+
+---
+
 ## 5. WebSockets & Salas Multijugador en Tiempo Real (`ws://<host>:3000`)
 
 ### 5.1. Conexión & Handshake

@@ -101,6 +101,33 @@ export interface PlayerRemoteState {
   lastUpdate: number;
   socketId: string;
   levelId: number;
+  isFinished?: boolean;
+  finishedAt?: number;
+  finishTimeSeconds?: number;
+  isSpectating?: boolean;
+  spectateTargetUserId?: string;
+  rank?: number;
+}
+
+export interface RoomSummaryPlayer {
+  rank: number;
+  userId: string;
+  username: string;
+  displayName: string;
+  timeSeconds: number;
+  collectiblesFound: number;
+  finishedAt: number;
+}
+
+export interface RoomInfoResponse {
+  roomId: string;
+  levelId: number;
+  playerCount: number;
+  maxPlayers: number;
+  players: PlayerRemoteState[];
+  finishedCount: number;
+  allFinished: boolean;
+  spectatorCount: number;
 }
 
 export interface FriendRequestDocument {
@@ -130,4 +157,5 @@ export interface JwtPayload {
   iat?: number;
   exp?: number;
 }
+
 

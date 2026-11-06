@@ -7,6 +7,7 @@ import playerRoutes from './modules/player/player.routes.js';
 import leaderboardRoutes from './modules/leaderboard/leaderboard.routes.js';
 import friendsRoutes from './modules/friends/friends.routes.js';
 import systemRoutes from './modules/system/system.routes.js';
+import roomsRoutes from './modules/rooms/rooms.routes.js';
 
 export function createExpressApp(): Express {
   const app = express();
@@ -32,6 +33,7 @@ export function createExpressApp(): Express {
   app.use('/api/v1/player', playerRoutes);
   app.use('/api/v1/leaderboard', leaderboardRoutes);
   app.use('/api/v1/friends', friendsRoutes);
+  app.use('/api/v1/rooms', roomsRoutes);
   app.use('/api/v1/system', systemRoutes);
 
   app.all('*', (req: Request, res: Response) => {

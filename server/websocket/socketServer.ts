@@ -97,6 +97,40 @@ export function setupSocketServer(httpServer: HttpServer): { io: Server; roomMan
       roomManager.handleWorldEvent(socket, data);
     });
 
+    // Synchronized Level Changes across the entire room
+    socket.on('room:level_change', async (data: { levelId: number }) => {
+      try {
+        await roomManager.handleLevelChange(socket, data.levelId);
+      } catch (err: any) {
+        socket.emit('error', { code: 'LEVEL_CHANGE_FAILED', message: err.message });
+      }
+    });
+
+    socket.on('room:advance_level', async () => {
+      try {
+        await roomManager.handleAdvanceLevel(socket);
+      } catch (err: any) {
+        socket.emit('error', { code: 'ADVANCE_LEVEL_FAILED', message: err.message });
+      }
+    });
+
+    // Spectator Mode & Level Completion
+    socket.on('room:player_finish', async (data: { levelId?: number; timeSeconds?: number; relicsFound?: number }) => {
+      try {
+        await roomManager.handlePlayerFinish(socket, {
+          levelId: data.levelId,
+          timeSeconds: data.timeSeconds,
+          collectiblesFound: data.relicsFound,
+        });
+      } catch (err: any) {
+        socket.emit('error', { code: 'PLAYER_FINISH_FAILED', message: err.message });
+      }
+    });
+
+    socket.on('spectate:switch', (data: { targetUserId: string }) => {
+      roomManager.handleSpectateSwitch(socket, data);
+    });
+
     socket.on('invite:send', async (data: { toUserId?: string; levelId?: number; roomId?: string }) => {
       try {
         await inviteManager.handleSendInvite(socket, data);
