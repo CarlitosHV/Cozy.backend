@@ -1,5 +1,5 @@
 export type CompanionType = 'nube' | 'estrella' | 'luciernaga' | 'catarina' | 'hada' | 'serpiente';
-export type InventoryItemType = 'baya' | 'nuez' | 'llave' | 'resortera' | 'piedra' | 'bate' | 'red' | 'bomba' | 'luz' | 'antorcha' | null;
+export type InventoryItemType = 'baya' | 'nuez' | 'llave' | 'resortera' | 'piedra' | 'bate' | 'red' | 'bomba' | 'luz' | 'antorcha' | 'palanca' | null;
 export type AnimationType = 'idle' | 'walk' | 'run' | 'jump' | 'fall';
 export type GameMode = 'normal' | 'contrareloj' | 'persecucion' | 'free' | 'time_trial' | 'chase';
 export type CanonicalGameMode = 'normal' | 'contrareloj' | 'persecucion';
@@ -78,6 +78,11 @@ export interface LevelRecordDocument {
   mode: GameMode;
   timeSeconds: number;
   collectiblesFound: number;
+  /** Level rating 0-1000 (time, deaths and relics); 0 when the party timer ran out */
+  score?: number;
+  /** 0-3 stars from the score */
+  stars?: number;
+  deaths?: number;
   createdAt: string;
 }
 
@@ -107,6 +112,11 @@ export interface PlayerRemoteState {
   isFinished?: boolean;
   finishedAt?: number;
   finishTimeSeconds?: number;
+  finishScore?: number;
+  finishStars?: number;
+  finishDeaths?: number;
+  /** Did not reach the goal before the party timer ran out */
+  forfeited?: boolean;
   isSpectating?: boolean;
   spectateTargetUserId?: string;
   rank?: number;

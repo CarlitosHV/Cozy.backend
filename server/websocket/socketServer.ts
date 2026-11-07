@@ -103,6 +103,11 @@ export function setupSocketServer(httpServer: HttpServer): { io: Server; roomMan
       roomManager.handleWorldEvent(socket, data);
     });
 
+    // Spectator mode: what a player still in the level sees (enemy positions), for the friends watching
+    socket.on('spectate:snap', (data: { levelId?: number; d?: unknown }) => {
+      roomManager.handleSpectateSnap(socket, data);
+    });
+
     // Synchronized Level Changes across the entire room
     socket.on('room:level_change', async (data: { levelId: number }) => {
       try {
@@ -121,17 +126,32 @@ export function setupSocketServer(httpServer: HttpServer): { io: Server; roomMan
     });
 
     // Spectator Mode & Level Completion
-    socket.on('room:player_finish', async (data: { levelId?: number; timeSeconds?: number; relicsFound?: number }) => {
+    socket.on(
+      'room:player_finish',
+      async (data: {
+        levelId?: number;
+        timeSeconds?: number;
+        relicsFound?: number;
+        score?: number;
+        stars?: number;
+        deaths?: number;
+        forfeited?: boolean;
+      }) => {
       try {
         await roomManager.handlePlayerFinish(socket, {
-          levelId: data.levelId,
-          timeSeconds: data.timeSeconds,
-          collectiblesFound: data.relicsFound,
+          levelId: data?.levelId,
+          timeSeconds: data?.timeSeconds,
+          collectiblesFound: data?.relicsFound,
+          score: data?.score,
+          stars: data?.stars,
+          deaths: data?.deaths,
+          forfeited: data?.forfeited === true,
         });
       } catch (err: any) {
         socket.emit('error', { code: 'PLAYER_FINISH_FAILED', message: err.message });
       }
-    });
+      }
+    );
 
     socket.on('spectate:switch', (data: { targetUserId: string }) => {
       roomManager.handleSpectateSwitch(socket, data);

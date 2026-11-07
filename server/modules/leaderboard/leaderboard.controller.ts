@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { db } from '../../config/database.js';
-import { redis } from '../../config/redis.js';
+import { bestPerPlayer } from './ranking.js';
 import { CanonicalGameMode, normalizeGameMode } from '../../models/types.js';
 
 export interface LeaderboardEntry {
@@ -9,44 +9,30 @@ export interface LeaderboardEntry {
   username: string;
   timeSeconds: number;
   collectiblesFound: number;
+  score: number;
+  stars: number;
+  deaths: number;
   createdAt?: string;
 }
 
+/** Best run of each player, highest score first (ties go to the faster time). */
 async function fetchModeLeaderboard(
   levelId: number,
   mode: CanonicalGameMode,
   limit: number
 ): Promise<LeaderboardEntry[]> {
-  const redisKey = `leaderboard:level:${levelId}:${mode}`;
-  const sortedSet = redis.zrange(redisKey, 0, limit - 1);
-
-  if (sortedSet && sortedSet.length > 0) {
-    return sortedSet.map((item, index) => {
-      const [userId, username] = item.member.split('|');
-      return {
-        rank: index + 1,
-        userId,
-        username: username || 'Jugador',
-        timeSeconds: Number(item.score.toFixed(2)),
-        collectiblesFound: 0,
-      };
-    });
-  }
-
-  // Fallback to real DB records and warm Redis sorted set
-  const records = await db.getLeaderboard(levelId, mode, limit);
-  return records.map((r, i) => {
-    const memberTag = `${r.userId}|${r.username}`;
-    redis.zadd(redisKey, r.timeSeconds, memberTag);
-    return {
-      rank: i + 1,
-      userId: r.userId,
-      username: r.username,
-      timeSeconds: r.timeSeconds,
-      collectiblesFound: r.collectiblesFound || 0,
-      createdAt: r.createdAt,
-    };
-  });
+  const records = bestPerPlayer(await db.getLeaderboard(levelId, mode, Math.max(limit * 6, 200)));
+  return records.slice(0, limit).map((r, i) => ({
+    rank: i + 1,
+    userId: r.userId,
+    username: r.username,
+    timeSeconds: r.timeSeconds,
+    collectiblesFound: r.collectiblesFound || 0,
+    score: r.score ?? 0,
+    stars: r.stars ?? 0,
+    deaths: r.deaths ?? 0,
+    createdAt: r.createdAt,
+  }));
 }
 
 export class LeaderboardController {

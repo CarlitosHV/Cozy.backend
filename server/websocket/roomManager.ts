@@ -39,6 +39,8 @@ interface WorldEvent {
 
 /** How many boss-fight events are kept per party and level. */
 const MAX_WORLD_EVENTS = 400;
+/** Numbers in one spectator snapshot (6 per enemy) */
+const MAX_SNAP_VALUES = 1200;
 
 /** Highest orb / rock index accepted from clients (levels have at most 5 of each). */
 const MAX_WORLD_INDEX = 32;
@@ -445,6 +447,22 @@ export class RoomManager {
     socket.to(binding.roomKey).emit('world:event', event);
   }
 
+  /**
+   * Spectator mode: a player still in the level streams the enemies they see (a flat list of
+   * numbers), so the friends who already finished and watch them see the same thing.
+   * Not stored: only the latest snapshot matters.
+   */
+  handleSpectateSnap(socket: Socket, data: { levelId?: number; d?: unknown }): void {
+    const user = socket.data.user;
+    const binding = this.socketRooms.get(socket.id);
+    if (!user || !binding) return;
+    if (Number(data?.levelId) !== binding.levelId) return;
+    const d = data?.d;
+    if (!Array.isArray(d) || d.length > MAX_SNAP_VALUES) return;
+    for (const n of d) if (typeof n !== 'number' || !isFinite(n) || Math.abs(n) > 100000) return;
+    socket.to(binding.roomKey).volatile.emit('spectate:snap', { userId: user.userId, levelId: binding.levelId, d });
+  }
+
   /** Forget the shared puzzle state once nobody is left in the party room. */
   private cleanupWorlds(roomKey: string): void {
     const stillUsed = [...this.socketRooms.values()].some((b) => b.roomKey === roomKey);
@@ -548,6 +566,10 @@ export class RoomManager {
       p.isFinished = false;
       p.finishedAt = undefined;
       p.finishTimeSeconds = undefined;
+      p.finishScore = undefined;
+      p.finishStars = undefined;
+      p.finishDeaths = undefined;
+      p.forfeited = undefined;
       p.isSpectating = false;
       p.spectateTargetUserId = undefined;
       p.rank = undefined;
@@ -585,7 +607,15 @@ export class RoomManager {
   // --- Spectator Mode & Level Completion ---
   async handlePlayerFinish(
     socket: Socket,
-    data: { levelId?: number; timeSeconds?: number; collectiblesFound?: number }
+    data: {
+      levelId?: number;
+      timeSeconds?: number;
+      collectiblesFound?: number;
+      score?: number;
+      stars?: number;
+      deaths?: number;
+      forfeited?: boolean;
+    }
   ): Promise<void> {
     const user = socket.data.user;
     if (!user) return;
@@ -596,6 +626,12 @@ export class RoomManager {
     const safeLevelId = Number(data?.levelId) || binding.levelId;
     const timeSeconds = Math.max(0.1, Number(data?.timeSeconds) || 0);
     const collectiblesFound = Number(data?.collectiblesFound) || 0;
+    const forfeited = data?.forfeited === true;
+    const clampInt = (v: unknown, max: number) => Math.max(0, Math.min(max, Math.round(Number(v) || 0)));
+    // A player who did not reach the goal before the party timer ran out passes with rating 0
+    const score = forfeited ? 0 : clampInt(data?.score, 1000);
+    const stars = forfeited ? 0 : clampInt(data?.stars, 3);
+    const deaths = clampInt(data?.deaths, 9999);
 
     const redisRoomKey = this.redisKeyForRoom(binding.roomKey);
     const player = redis.hget<PlayerRemoteState>(redisRoomKey, socket.id);
@@ -610,6 +646,10 @@ export class RoomManager {
     player.isFinished = true;
     player.finishedAt = Date.now();
     player.finishTimeSeconds = timeSeconds;
+    player.finishScore = score;
+    player.finishStars = stars;
+    player.finishDeaths = deaths;
+    player.forfeited = forfeited;
     player.rank = finishRank;
     player.isSpectating = true;
 
@@ -631,6 +671,9 @@ export class RoomManager {
         mode: 'normal',
         timeSeconds,
         collectiblesFound,
+        score,
+        stars,
+        deaths,
       });
     } catch (err: any) {
       console.warn('[RoomManager] Failed to record level completion:', err.message);
@@ -668,6 +711,10 @@ export class RoomManager {
       name: player.displayName,
       playerName: player.displayName,
       timeSeconds,
+      score,
+      stars,
+      deaths,
+      forfeited,
       rank: finishRank,
       isSpectating: true,
       allFinished: isAllFinished,
@@ -683,8 +730,14 @@ export class RoomManager {
 
     // 3. If ALL players finished the level, emit summary
     if (isAllFinished) {
+      // Players who reached the goal first (best score, then time); timed-out players last
       const summary = finishedList
-        .sort((a, b) => (a.finishTimeSeconds || 0) - (b.finishTimeSeconds || 0))
+        .sort(
+          (a, b) =>
+            Number(Boolean(a.forfeited)) - Number(Boolean(b.forfeited)) ||
+            (b.finishScore || 0) - (a.finishScore || 0) ||
+            (a.finishTimeSeconds || 0) - (b.finishTimeSeconds || 0)
+        )
         .map((p, i) => ({
           rank: i + 1,
           userId: p.userId,
@@ -694,6 +747,10 @@ export class RoomManager {
           name: p.displayName || p.username,
           playerName: p.displayName || p.username,
           timeSeconds: p.finishTimeSeconds || 0,
+          score: p.finishScore || 0,
+          stars: p.finishStars || 0,
+          deaths: p.finishDeaths || 0,
+          forfeited: Boolean(p.forfeited),
         }));
 
       this.io.to(binding.roomKey).emit('room:all_finished', {

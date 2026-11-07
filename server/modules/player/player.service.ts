@@ -1,6 +1,5 @@
 import { CONFIG } from '../../config/env.js';
 import { db } from '../../config/database.js';
-import { redis } from '../../config/redis.js';
 import {
   CharacterAppearance,
   GameMode,
@@ -10,6 +9,7 @@ import {
   UserDocument,
   normalizeGameMode,
 } from '../../models/types.js';
+import { bestPerPlayer } from '../leaderboard/ranking.js';
 
 export class PlayerService {
   static async getMe(userId: string): Promise<{
@@ -76,6 +76,9 @@ export class PlayerService {
       levelId: number;
       timeSeconds: number;
       relicsFound: number;
+      score?: number;
+      stars?: number;
+      deaths?: number;
       mode?: GameMode;
       authTicket?: string;
     }
@@ -140,7 +143,12 @@ export class PlayerService {
       stats: updatedStats,
     });
 
-    // 4. Save Level Record
+    // 4. Save Level Record (best previous score first, to tell a new personal best)
+    const score = Math.max(0, Math.min(1000, Math.round(data.score ?? 0)));
+    const before = await db.getLeaderboard(data.levelId, mode, 1000);
+    const prevBest = before
+      .filter((r) => r.userId === userId)
+      .reduce((m, r) => Math.max(m, r.score ?? 0), -1);
     const record = await db.addRecord({
       userId,
       username: user.displayName || user.username,
@@ -148,19 +156,19 @@ export class PlayerService {
       mode,
       timeSeconds: Number(data.timeSeconds.toFixed(2)),
       collectiblesFound: data.relicsFound || 0,
+      score,
+      stars: Math.max(0, Math.min(3, Math.round(data.stars ?? 0))),
+      deaths: Math.max(0, Math.round(data.deaths ?? 0)),
     });
 
-    // 5. Update Redis Leaderboard Sorted Set
-    const leaderboardKey = `leaderboard:level:${data.levelId}:${mode}`;
-    const memberTag = `${userId}|${user.displayName || user.username}`;
-    redis.zadd(leaderboardKey, record.timeSeconds, memberTag);
-
-    const rank = (redis.zrank(leaderboardKey, memberTag) ?? 0) + 1;
+    // 5. Rank in the level's ranking (best score per player)
+    const board = bestPerPlayer(await db.getLeaderboard(data.levelId, mode, 1000));
+    const rank = Math.max(1, board.findIndex((r) => r.userId === userId) + 1);
 
     return {
       record,
       rank,
-      isNewBest: true,
+      isNewBest: score > prevBest,
       progress: updatedProgress,
       antiCheatCheck: {
         passed: true,

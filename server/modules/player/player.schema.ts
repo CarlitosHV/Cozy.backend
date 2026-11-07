@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 const companionEnum = z.enum(['nube', 'estrella', 'luciernaga', 'catarina', 'hada', 'serpiente']);
-const inventorySlotItem = z.enum(['baya', 'nuez', 'llave', 'resortera', 'piedra', 'bate', 'red', 'bomba', 'luz', 'antorcha']).nullable();
+const inventorySlotItem = z.enum(['baya', 'nuez', 'llave', 'resortera', 'piedra', 'bate', 'red', 'bomba', 'luz', 'antorcha', 'palanca']).nullable();
 
 const hexColor = z.string().regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, 'Invalid hex color');
 
@@ -39,9 +39,12 @@ export const inventorySchema = z.object({
 });
 
 export const completeLevelSchema = z.object({
-  levelId: z.number().int().min(1).max(10),
+  levelId: z.number().int().min(1).max(999),
   timeSeconds: z.number().positive(),
   relicsFound: z.number().int().min(0).max(50).default(0),
+  score: z.number().int().min(0).max(1000).default(0),
+  stars: z.number().int().min(0).max(3).default(0),
+  deaths: z.number().int().min(0).max(9999).default(0),
   mode: z
     .enum(['normal', 'contrareloj', 'persecucion', 'free', 'time_trial', 'chase'])
     .default('normal'),

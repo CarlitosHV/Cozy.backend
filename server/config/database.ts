@@ -429,7 +429,7 @@ class InMemoryDatabase {
         const docs = await this.mongoDb
           .collection<LevelRecordDocument>('level_records')
           .find({ levelId, mode: { $in: queryModes } as any })
-          .sort({ timeSeconds: 1 })
+          .sort({ score: -1, timeSeconds: 1 })
           .limit(limit)
           .toArray();
         if (docs && docs.length > 0) return docs;
@@ -445,7 +445,7 @@ class InMemoryDatabase {
 
     return this.records
       .filter((r) => r.levelId === levelId && matchesMode(r.mode))
-      .sort((a, b) => a.timeSeconds - b.timeSeconds)
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || a.timeSeconds - b.timeSeconds)
       .slice(0, limit);
   }
 
