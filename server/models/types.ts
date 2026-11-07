@@ -1,5 +1,5 @@
-export type CompanionType = 'nube' | 'estrella' | 'luciernaga' | 'catarina' | 'hada' | 'serpiente';
-export type InventoryItemType = 'baya' | 'nuez' | 'llave' | 'resortera' | 'piedra' | 'bate' | 'red' | 'bomba' | 'luz' | 'antorcha' | 'palanca' | null;
+export type CompanionType = 'nube' | 'estrella' | 'luciernaga' | 'catarina' | 'hada' | 'serpiente' | 'polilla';
+export type InventoryItemType = 'baya' | 'nuez' | 'llave' | 'resortera' | 'piedra' | 'bate' | 'red' | 'bomba' | 'luz' | 'antorcha' | 'palanca' | 'craneo' | 'daga' | null;
 export type AnimationType = 'idle' | 'walk' | 'run' | 'jump' | 'fall';
 export type GameMode = 'normal' | 'contrareloj' | 'persecucion' | 'free' | 'time_trial' | 'chase';
 export type CanonicalGameMode = 'normal' | 'contrareloj' | 'persecucion';

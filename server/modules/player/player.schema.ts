@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-const companionEnum = z.enum(['nube', 'estrella', 'luciernaga', 'catarina', 'hada', 'serpiente']);
-const inventorySlotItem = z.enum(['baya', 'nuez', 'llave', 'resortera', 'piedra', 'bate', 'red', 'bomba', 'luz', 'antorcha', 'palanca']).nullable();
+const companionEnum = z.enum(['nube', 'estrella', 'luciernaga', 'catarina', 'hada', 'serpiente', 'polilla']);
+const inventorySlotItem = z.enum(['baya', 'nuez', 'llave', 'resortera', 'piedra', 'bate', 'red', 'bomba', 'luz', 'antorcha', 'palanca', 'craneo', 'daga']).nullable();
 
 const hexColor = z.string().regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, 'Invalid hex color');
 
