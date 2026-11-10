@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import http from 'http';
 import { createExpressApp } from './server/app.js';
 import { setupSocketServer } from './server/websocket/socketServer.js';
