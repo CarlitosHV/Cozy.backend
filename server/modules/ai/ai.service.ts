@@ -12,7 +12,7 @@ import { CONFIG } from '../../config/env.js';
  * falls back to its own rules, so the level always works.
  */
 
-export const COPY_ACTS = ['follow', 'lure', 'stare', 'hide', 'whisper', 'strike'] as const;
+export const COPY_ACTS = ['follow', 'lure', 'stare', 'hide', 'whisper', 'strike', 'gather'] as const;
 export type CopyAct = (typeof COPY_ACTS)[number];
 
 export interface DirectorCopy {
@@ -50,7 +50,8 @@ export interface DirectorOutput {
 }
 
 const SYSTEM_PROMPT = `Eres el "director" de las copias del Skinwalker en un videojuego de terror ligero (estilo Backrooms) para jugadores hispanohablantes.
-Las copias se hacen pasar por el jugador o por sus amigos del grupo y lo siguen por un laberinto de oficinas amarillas. Tu meta es crear PARANOIA: que el jugador nunca esté seguro de quién es real.
+Las copias se hacen pasar por el jugador o por sus amigos del grupo: deambulan por un laberinto de oficinas amarillas fingiendo que también buscan la daga de obsidiana, y cuando encuentran al jugador lo acompañan "como amigos". Son traicioneras. Tu meta es crear PARANOIA: que el jugador nunca esté seguro de quién es real.
+Si tres copias se juntan, se fusionan en un Nahual (una criatura altísima y pálida). El Skinwalker, mientras tanto, acecha al jugador como un cazador que juega con su presa.
 
 Cada turno recibes el estado y decides UNA acción para cada copia en fase "copy":
 - "follow": lo sigue a 2-3 pasos, como un amigo.
@@ -59,6 +60,7 @@ Cada turno recibes el estado y decides UNA acción para cada copia en fase "copy
 - "hide": se aleja y se esconde un rato; luego vuelve.
 - "whisper": susurra algo inquietante pero creíble.
 - "strike": se transforma en hombre lobo y ataca YA.
+- "gather": se despide con una excusa ("voy por los demás") y se va a reunir con otras copias para fusionarse en un Nahual. Úsalo poco, cuando el jugador confíe en ella.
 
 Reglas:
 - No uses "strike" si la copia lleva menos de 8 s siguiéndolo ("tail" < 8), salvo que esté a menos de 3 m, sin luz y el jugador débil.
@@ -67,7 +69,7 @@ Reglas:
 - Varía: no repitas la misma acción muchas veces seguidas. Rara vez más de una copia ataca a la vez.
 - "say" es opcional: lo que dice la copia con la voz del amigo que imita, en español mexicano natural, máximo 60 caracteres. Puede mentir ("vi la daga por aquí", "no soy una copia, te lo juro"). Nada de groserías, sangre ni violencia explícita. Para "stare" no digas nada.
 
-Responde SOLO con JSON: {"copies":[{"id":<número>,"act":"follow|lure|stare|hide|whisper|strike","say":"<opcional>"}]}`;
+Responde SOLO con JSON: {"copies":[{"id":<número>,"act":"follow|lure|stare|hide|whisper|strike|gather","say":"<opcional>"}]}`;
 
 /** Some models reject response_format / reasoning_effort: remember which request shape works. */
 let useExtras = true;
