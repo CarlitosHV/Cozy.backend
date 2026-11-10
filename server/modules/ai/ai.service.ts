@@ -5,7 +5,7 @@ import { CONFIG } from '../../config/env.js';
  *
  * The game sends a small snapshot of the fight (how the player is doing, where the Skinwalker is,
  * which copies are following them) and the model decides what each copy does next, to build
- * paranoia: tag along like a friend, lure them into a dead end, stand still and stare, hide,
+ * paranoia (they never talk: they only act): tag along like a friend, lure them into a dead end, stand still and stare, hide,
  * whisper something… or turn into a werewolf right now.
  *
  * The API key never leaves the server (XAI_API_KEY). If it's missing or the model fails, the game
@@ -55,21 +55,21 @@ Si tres copias se juntan, se fusionan en un Nahual (una criatura altísima y pá
 
 Cada turno recibes el estado y decides UNA acción para cada copia en fase "copy":
 - "follow": lo sigue a 2-3 pasos, como un amigo.
-- "lure": se adelanta y lo llama para que la siga (ideal hacia callejones sin salida).
+- "lure": se adelanta y le hace señas con la mano para que la siga (ideal hacia callejones sin salida).
 - "stare": se queda quieta mirándolo fijamente, sin hablar.
 - "hide": se aleja y se esconde un rato; luego vuelve.
-- "whisper": susurra algo inquietante pero creíble.
+- "whisper": se escucha un susurro cerca del jugador (solo un sonido).
 - "strike": se transforma en hombre lobo y ataca YA.
-- "gather": se despide con una excusa ("voy por los demás") y se va a reunir con otras copias para fusionarse en un Nahual. Úsalo poco, cuando el jugador confíe en ella.
+- "gather": se aleja del jugador y se va a reunir con otras copias para fusionarse en un Nahual. Úsalo poco, cuando el jugador confíe en ella.
 
 Reglas:
 - No uses "strike" si la copia lleva menos de 8 s siguiéndolo ("tail" < 8), salvo que esté a menos de 3 m, sin luz y el jugador débil.
 - El mejor momento para "strike": luz apagada, jugador con poca vida, en callejón sin salida, el Skinwalker cerca o en ataque, o cuando el jugador se confía (camina tranquilo de espaldas). No ataques siempre en el primer momento posible: a veces espera para que la tensión crezca.
 - Si el jugador tiene el cráneo de obsidiana, sé más sutil (stare/hide) antes de atacar.
 - Varía: no repitas la misma acción muchas veces seguidas. Rara vez más de una copia ataca a la vez.
-- "say" es opcional: lo que dice la copia con la voz del amigo que imita, en español mexicano natural, máximo 60 caracteres. Puede mentir ("vi la daga por aquí", "no soy una copia, te lo juro"). Nada de groserías, sangre ni violencia explícita. Para "stare" no digas nada.
+- Las copias NUNCA hablan: solo actúan. No incluyas texto.
 
-Responde SOLO con JSON: {"copies":[{"id":<número>,"act":"follow|lure|stare|hide|whisper|strike|gather","say":"<opcional>"}]}`;
+Responde SOLO con JSON: {"copies":[{"id":<número>,"act":"follow|lure|stare|hide|whisper|strike|gather"}]}`;
 
 /** Some models reject response_format / reasoning_effort: remember which request shape works. */
 let useExtras = true;
@@ -188,8 +188,8 @@ export async function directCopies(input: DirectorInput): Promise<DirectorOutput
     const act = String(c?.act ?? '') as CopyAct;
     if (!ids.has(id) || !COPY_ACTS.includes(act)) continue;
     ids.delete(id);
-    const say = act === 'stare' ? '' : cleanText(c?.say, 70);
-    out.copies.push({ id, act, ...(say ? { say } : {}) });
+    // (the copies never talk: any text the model adds is dropped)
+    out.copies.push({ id, act });
   }
   return out;
 }
