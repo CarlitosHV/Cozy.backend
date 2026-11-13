@@ -12,6 +12,37 @@ export function normalizeGameMode(raw?: string): CanonicalGameMode {
   return 'normal';
 }
 
+export type ShopCategory =
+  | 'skin'
+  | 'hat'
+  | 'outfit'
+  | 'pattern'
+  | 'glasses'
+  | 'backpack'
+  | 'hair'
+  | 'companion';
+
+export type ShopRarity = 'common' | 'rare' | 'epic' | 'legendary';
+
+export interface ShopItem {
+  id: string;
+  category: ShopCategory;
+  name: string;
+  description: string;
+  priceRelics: number;
+  rarity: ShopRarity;
+  previewColor?: string;
+  companionId?: CompanionType;
+  appearancePatch: Record<string, string | number | boolean>;
+}
+
+export interface ShopPurchaseRecord {
+  itemId: string;
+  category: ShopCategory;
+  priceRelics: number;
+  purchasedAt: string;
+}
+
 export interface CharacterAppearance {
   bodyType: 'chico' | 'chica';
   skinColor: string;       // Hex (#f8d5b8)
@@ -28,6 +59,11 @@ export interface CharacterAppearance {
   glasses: string;
   backpack: string;
   companion: CompanionType;
+  pattern?: string;
+  outfit?: string;
+  skin?: string;
+  accessory?: string;
+  [key: string]: string | number | boolean | undefined;
 }
 
 export interface InventoryStatus {
@@ -67,6 +103,12 @@ export interface PlayerProfileDocument {
   inventory: InventoryStatus;
   progress: PlayerProgress;
   stats: PlayerStats;
+  /** Spendable relics currency earned across levels */
+  relicsBalance?: number;
+  /** IDs of cosmetics/items unlocked in the shop */
+  unlockedItems?: string[];
+  /** Audit trail of shop purchases */
+  purchaseHistory?: ShopPurchaseRecord[];
   updatedAt: string;
 }
 
@@ -132,9 +174,21 @@ export interface RoomSummaryPlayer {
   finishedAt: number;
 }
 
+export interface RoomMeta {
+  roomId: string;
+  hostUserId: string;
+  hostUsername?: string;
+  hostDisplayName?: string;
+  currentLevelId: number;
+  createdAt: number;
+}
+
 export interface RoomInfoResponse {
   roomId: string;
   levelId: number;
+  hostUserId?: string;
+  hostUsername?: string;
+  hostDisplayName?: string;
   playerCount: number;
   maxPlayers: number;
   players: PlayerRemoteState[];

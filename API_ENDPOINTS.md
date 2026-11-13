@@ -379,3 +379,125 @@ socket.emit('invite:respond', {
 ```
 *Ambos clientes proceden a emitir `room:join` con el mismo `roomId` obtenido en `invite:result`, permitiendo que 3, 4 o más amigos se unan secuencialmente a la misma sala sin desincronizarse.*
 
+---
+
+## 6. Tienda de Cosméticos / Moneda de Reliquias (`/api/v1/shop`)
+
+Las **reliquias (`relicsBalance`)** obtenidas al completar niveles (`POST /api/v1/player/complete-level`) funcionan como la moneda del juego para desbloquear elementos de personalización:
+- `skin` (Pieles)
+- `hat` (Gorros y sombreros)
+- `outfit` (Conjuntos completos)
+- `pattern` (Patrones de ropa)
+- `glasses` (Lentes y visores)
+- `backpack` (Mochilas y alas)
+- `hair` (Peinados)
+- `companion` (Compañeros)
+
+---
+
+### 6.1. `GET /api/v1/shop/catalog`
+Retorna el catálogo completo de la tienda. Si se envía `Authorization: Bearer <accessToken>`, cada ítem incluye `owned`, `equipped` y `canAfford`, además de `relicsBalance`.
+
+- **Query Params (Opcionales):**
+  - `category`: Filtra por categoría (`skin`, `hat`, `outfit`, `pattern`, `glasses`, `backpack`, `hair`, `companion`).
+  - `rarity`: Filtra por rareza (`common`, `rare`, `epic`, `legendary`).
+  - `onlyOwned`: `"true"` para ver solo lo desbloqueado.
+
+- **Response `200 OK`:**
+```json
+{
+  "status": "success",
+  "data": {
+    "currency": "relics",
+    "relicsBalance": 30,
+    "categories": [
+      { "id": "skin", "label": "Pieles" },
+      { "id": "hat", "label": "Gorros y Sombreros" },
+      { "id": "outfit", "label": "Conjuntos" },
+      { "id": "pattern", "label": "Patrones" }
+    ],
+    "totalItems": 39,
+    "items": [
+      {
+        "id": "outfit_neon_runner",
+        "category": "outfit",
+        "name": "Conjunto Corredor Neón",
+        "description": "Atuendo aerodinámico magenta y cian que brilla en la oscuridad.",
+        "priceRelics": 38,
+        "rarity": "epic",
+        "previewColor": "#ec4899",
+        "appearancePatch": {
+          "outfit": "neon_runner",
+          "shirtStyle": "cyber_jacket",
+          "shirtColor": "#ec4899",
+          "pantsStyle": "tech_pants",
+          "pantsColor": "#0f172a",
+          "shoesColor": "#22d3ee"
+        },
+        "owned": false,
+        "equipped": false,
+        "canAfford": false
+      }
+    ]
+  }
+}
+```
+
+---
+
+### 6.2. `GET /api/v1/shop/inventory`
+*(Requiere `Authorization: Bearer <accessToken>`)*  
+Retorna el saldo actual de reliquias, lista de IDs desbloqueados, ítems equipados actualmente e historial de compras.
+
+---
+
+### 6.3. `POST /api/v1/shop/purchase`
+*(Requiere `Authorization: Bearer <accessToken>`)*  
+Desbloquea un ítem descontando su costo en `relicsBalance`.
+
+- **Request Body:**
+```json
+{
+  "itemId": "hat_explorador",
+  "autoEquip": true
+}
+```
+
+- **Response `200 OK`:**
+```json
+{
+  "status": "success",
+  "message": "'Sombrero de Explorador' desbloqueado con éxito",
+  "data": {
+    "purchasedItem": { "id": "hat_explorador", "category": "hat", "priceRelics": 12 },
+    "relicsBalance": 18,
+    "relicsSpent": 12,
+    "unlockedItems": ["skin_natural", "hat_none", "hat_beanie_cozy", "hat_explorador"],
+    "equipped": true,
+    "appearance": { "hat": "gorro_explorador" }
+  }
+}
+```
+
+- **Errores posibles:**
+  - `400 INSUFFICIENT_RELICS`: No hay suficientes reliquias (incluye `details: { required, available, missing }`).
+  - `409 ALREADY_OWNED`: El ítem ya estaba desbloqueado.
+  - `404 ITEM_NOT_FOUND`: El `itemId` no existe en el catálogo.
+
+---
+
+### 6.4. `POST /api/v1/shop/equip`
+*(Requiere `Authorization: Bearer <accessToken>`)*  
+Equipa uno o varios ítems desbloqueados sobre el `appearance` del jugador.
+
+- **Request Body:**
+```json
+{
+  "itemIds": ["hat_explorador", "pattern_stripes"]
+}
+```
+*(También acepta `{ "itemId": "hat_explorador" }` para un solo ítem).*
+
+- **Error `403 ITEM_LOCKED`:** Si el jugador intenta equipar un ítem de pago que aún no ha desbloqueado en la tienda.
+
+

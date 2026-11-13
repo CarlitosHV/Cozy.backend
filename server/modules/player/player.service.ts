@@ -10,6 +10,7 @@ import {
   normalizeGameMode,
 } from '../../models/types.js';
 import { bestPerPlayer } from '../leaderboard/ranking.js';
+import { getEffectiveRelicsBalance, getEffectiveUnlockedSet } from '../shop/shop.service.js';
 
 export class PlayerService {
   static async getMe(userId: string): Promise<{
@@ -18,6 +19,8 @@ export class PlayerService {
     inventory: InventoryStatus;
     progress: PlayerProfileDocument['progress'];
     stats: PlayerProfileDocument['stats'];
+    relicsBalance: number;
+    unlockedItems: string[];
   }> {
     const user = await db.findUserById(userId);
     if (!user) {
@@ -43,6 +46,8 @@ export class PlayerService {
       inventory: profile.inventory,
       progress: profile.progress,
       stats: profile.stats,
+      relicsBalance: getEffectiveRelicsBalance(profile),
+      unlockedItems: Array.from(getEffectiveUnlockedSet(profile)),
     };
   }
 
@@ -86,6 +91,8 @@ export class PlayerService {
     record: LevelRecordDocument;
     rank: number;
     isNewBest: boolean;
+    relicsEarned: number;
+    relicsBalance: number;
     progress: PlayerProfileDocument['progress'];
     antiCheatCheck: { passed: boolean; verifiedAt: string; minPhysicalTime: number };
   }> {
@@ -121,16 +128,19 @@ export class PlayerService {
       throw err;
     }
 
-    // 3. Update Progress
+    // 3. Update Progress & Spendable Relics Currency
     const completedSet = new Set(profile.progress.completedLevels);
     completedSet.add(data.levelId);
     const nextUnlock = Math.max(profile.progress.maxUnlockedLevel, data.levelId + 1);
+    const relicsEarned = Math.max(0, Math.floor(data.relicsFound || 0));
+    const currentBalance = getEffectiveRelicsBalance(profile);
+    const newRelicsBalance = currentBalance + relicsEarned;
 
     const updatedProgress = {
       ...profile.progress,
       maxUnlockedLevel: nextUnlock,
       completedLevels: Array.from(completedSet).sort((a, b) => a - b),
-      totalCollectiblesFound: profile.progress.totalCollectiblesFound + (data.relicsFound || 0),
+      totalCollectiblesFound: profile.progress.totalCollectiblesFound + relicsEarned,
     };
 
     const updatedStats = {
@@ -141,6 +151,7 @@ export class PlayerService {
     await db.updateProfile(userId, {
       progress: updatedProgress,
       stats: updatedStats,
+      relicsBalance: newRelicsBalance,
     });
 
     // 4. Save Level Record (best previous score first, to tell a new personal best)
@@ -169,6 +180,8 @@ export class PlayerService {
       record,
       rank,
       isNewBest: score > prevBest,
+      relicsEarned,
+      relicsBalance: newRelicsBalance,
       progress: updatedProgress,
       antiCheatCheck: {
         passed: true,

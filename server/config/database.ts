@@ -50,6 +50,18 @@ export const DEFAULT_STATS: PlayerStats = {
   totalFalls: 0,
 };
 
+export const DEFAULT_UNLOCKED_SHOP_ITEMS: string[] = [
+  'skin_natural',
+  'hat_none',
+  'hat_beanie_cozy',
+  'outfit_default',
+  'pattern_solid',
+  'glasses_none',
+  'backpack_explorer',
+  'hair_cozy_messy',
+  'companion_nube',
+];
+
 class InMemoryDatabase {
   users: Map<string, UserDocument> = new Map();
   profiles: Map<string, PlayerProfileDocument> = new Map();
@@ -299,6 +311,9 @@ class InMemoryDatabase {
       inventory: { slots: [...DEFAULT_INVENTORY.slots] as any },
       progress: { ...DEFAULT_PROGRESS },
       stats: { ...DEFAULT_STATS },
+      relicsBalance: 0,
+      unlockedItems: [...DEFAULT_UNLOCKED_SHOP_ITEMS],
+      purchaseHistory: [],
       updatedAt: now,
     };
 
@@ -367,6 +382,9 @@ class InMemoryDatabase {
         inventory: { slots: [...DEFAULT_INVENTORY.slots] as any },
         progress: { ...DEFAULT_PROGRESS },
         stats: { ...DEFAULT_STATS },
+        relicsBalance: 0,
+        unlockedItems: [...DEFAULT_UNLOCKED_SHOP_ITEMS],
+        purchaseHistory: [],
         updatedAt: now,
       };
     }
@@ -849,6 +867,12 @@ class InMemoryDatabase {
           totalJumps: 145,
           totalFalls: 12,
         },
+        relicsBalance: u.progress.totalCollectiblesFound || 0,
+        unlockedItems: [
+          ...DEFAULT_UNLOCKED_SHOP_ITEMS,
+          ...u.progress.unlockedCompanions.map((c: string) => `companion_${c}`),
+        ],
+        purchaseHistory: [],
         updatedAt: now,
       };
       this.profiles.set(userId, profileDoc);
